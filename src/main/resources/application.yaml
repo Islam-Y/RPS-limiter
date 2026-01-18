@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: rps_client
+
+logging:
+  pattern:
+    console: "[%d{yyyy-MM-dd HH:mm:ss.SSS}] [%level] [%logger{36}] - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+  endpoint:
+    prometheus:
+      enabled: true
+
+loadgen:
+  tick: 100ms
+  http:
+    timeout: 10s
+    connect-timeout: 5s
+    slow-threshold: 1s
+  default-concurrency: 0
