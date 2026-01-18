@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "loadgen")
 public class LoadGeneratorProperties {
     private Duration tick = Duration.ofMillis(100);
+    private Duration logInterval = Duration.ofSeconds(10);
     private final HttpProperties http = new HttpProperties();
     @PositiveOrZero
     private int defaultConcurrency = 0;
@@ -20,6 +21,14 @@ public class LoadGeneratorProperties {
 
     public void setTick(Duration tick) {
         this.tick = tick;
+    }
+
+    public Duration getLogInterval() {
+        return logInterval;
+    }
+
+    public void setLogInterval(Duration logInterval) {
+        this.logInterval = logInterval;
     }
 
     public HttpProperties getHttp() {

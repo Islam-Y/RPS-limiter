@@ -95,6 +95,10 @@ public class LoadMetrics {
         return totalErrors.get();
     }
 
+    public long getCurrentRps() {
+        return currentRps.get();
+    }
+
     private void rollRps() {
         currentRps.set(currentSecondCount.getAndSet(0));
     }

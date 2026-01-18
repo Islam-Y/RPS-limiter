@@ -17,6 +17,7 @@ management:
 
 loadgen:
   tick: 100ms
+  log-interval: 10s
   http:
     timeout: 10s
     connect-timeout: 5s

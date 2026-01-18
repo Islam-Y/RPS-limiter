@@ -54,6 +54,7 @@ public class LoadTestManager {
                 validated.profile(),
                 scheduler,
                 metrics,
+                properties.getLogInterval(),
                 metrics.getTotalSent(),
                 metrics.getTotalErrors()
         );
