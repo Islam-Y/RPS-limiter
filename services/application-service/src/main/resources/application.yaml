@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: application-service
+
+server:
+  port: 8081
+  tomcat:
+    accept-count: 100
+    max-connections: 10000
+    threads:
+      max: 200
+      min-spare: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: [health, prometheus]
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+app:
+  processing-delay-ms: 0
+  log-per-request: true

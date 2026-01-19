@@ -3,6 +3,8 @@ package ru.itmo.rps_client.service;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+
+import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,7 @@ import ru.itmo.rps_client.scheduler.IntervalScheduler;
 import ru.itmo.rps_client.scheduler.LoadScheduler;
 
 @Service
+@AllArgsConstructor
 public class LoadTestManager {
     private static final Logger log = LoggerFactory.getLogger(LoadTestManager.class);
 
@@ -26,16 +29,6 @@ public class LoadTestManager {
     private final LoadGeneratorProperties properties;
     private final LoadMetrics metrics;
     private final AtomicReference<TestExecution> currentExecution = new AtomicReference<>();
-
-    public LoadTestManager(TestConfigValidator validator,
-                           RequestSenderFactory senderFactory,
-                           LoadGeneratorProperties properties,
-                           LoadMetrics metrics) {
-        this.validator = validator;
-        this.senderFactory = senderFactory;
-        this.properties = properties;
-        this.metrics = metrics;
-    }
 
     public synchronized TestExecution start(TestConfig config) {
         TestExecution existing = currentExecution.get();

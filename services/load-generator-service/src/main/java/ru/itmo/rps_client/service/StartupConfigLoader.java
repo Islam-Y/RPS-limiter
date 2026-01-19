@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -14,20 +16,13 @@ import ru.itmo.rps_client.config.LoadGeneratorProperties;
 import ru.itmo.rps_client.config.TestConfig;
 
 @Component
+@AllArgsConstructor
 public class StartupConfigLoader implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(StartupConfigLoader.class);
 
     private final LoadGeneratorProperties properties;
     private final ObjectMapper mapper;
     private final LoadTestManager manager;
-
-    public StartupConfigLoader(LoadGeneratorProperties properties,
-                               ObjectMapper mapper,
-                               LoadTestManager manager) {
-        this.properties = properties;
-        this.mapper = mapper;
-        this.manager = manager;
-    }
 
     @Override
     public void run(ApplicationArguments args) {
