@@ -1,8 +1,10 @@
+# Gradle
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
+bin/
 
-### Eclipse/STS ###
+# Eclipse/STS
 .apt_generated/
 .classpath
 .factorypath
@@ -10,26 +12,25 @@ build/
 .settings/
 .springBeans
 .sts4-cache/
-bin/
 
-### IntelliJ IDEA ###
+# IntelliJ IDEA
 .idea/
 *.iws
 *.iml
 *.ipr
 out/
 
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
+# VS Code
 .vscode/
 
-### OS/Editor ###
+# OS/Editor
 .DS_Store
 Thumbs.db
 *.log
