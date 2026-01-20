@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: rate-limiter-service
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+server:
+  port: 8082
+
+ratelimiter:
+  target-url: ${TARGET_URL:http://service-b:8081}
+  algorithm: ${RATE_LIMIT_ALGORITHM:fixed}
+  limit: ${RATE_LIMIT_LIMIT:100}
+  window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}
+  capacity: ${RATE_LIMIT_CAPACITY:200}
+  fill-rate: ${RATE_LIMIT_FILL_RATE:50}
+  fail-open: true
+  config-key: ratelimiter:config
+  redis-health-interval: 5s
+  bounds:
+    max-limit: 1000000
+    max-window-seconds: 3600
+    max-capacity: 1000000
+    max-fill-rate: 1000000
+  adaptive:
+    enabled: ${ADAPTIVE_ENABLED:false}
+    url: ${ADAPTIVE_URL:}
+    interval: ${ADAPTIVE_INTERVAL:30s}
+    timeout: ${ADAPTIVE_TIMEOUT:5s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always

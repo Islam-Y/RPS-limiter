@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class LoadMetrics {
     private final MeterRegistry registry;
     private Counter successCounter;
+    private Counter rateLimitedCounter;
     private Counter errorCounter;
     private Timer latencyTimer;
     private final AtomicLong totalSent = new AtomicLong();
@@ -73,6 +74,15 @@ public class LoadMetrics {
         inFlight.decrementAndGet();
     }
 
+    public void recordRequestRateLimited(long runId, Duration duration) {
+        if (runId != this.runId.get()) {
+            return;
+        }
+        rateLimitedCounter.increment();
+        latencyTimer.record(duration);
+        inFlight.decrementAndGet();
+    }
+
     public void recordRequestError(long runId, Duration duration) {
         if (runId != this.runId.get()) {
             return;
@@ -108,6 +118,10 @@ public class LoadMetrics {
                 .description("Total HTTP requests sent by load generator")
                 .tag("status", "success")
                 .register(registry);
+        rateLimitedCounter = Counter.builder("loadgen_requests_total")
+                .description("Total HTTP requests sent by load generator")
+                .tag("status", "rate_limited")
+                .register(registry);
         errorCounter = Counter.builder("loadgen_requests_total")
                 .description("Total HTTP requests sent by load generator")
                 .tag("status", "error")
@@ -133,7 +147,7 @@ public class LoadMetrics {
                 .description("Current requests per second")
                 .register(registry);
         Gauge.builder("loadgen_active_threads", inFlight, AtomicInteger::get)
-                .description("Number of active in-flight requests")
+                .description("Number of concurrent in-flight requests")
                 .register(registry);
         Gauge.builder("loadgen_test_running", testRunning, value -> value.get() ? 1 : 0)
                 .description("Whether a load test is currently running")
@@ -143,6 +157,9 @@ public class LoadMetrics {
     private void removeCounters() {
         if (successCounter != null) {
             registry.remove(successCounter);
+        }
+        if (rateLimitedCounter != null) {
+            registry.remove(rateLimitedCounter);
         }
         if (errorCounter != null) {
             registry.remove(errorCounter);

@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,7 +20,7 @@ import ru.itmo.rps_client.scheduler.IntervalScheduler;
 import ru.itmo.rps_client.scheduler.LoadScheduler;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class LoadTestManager {
     private static final Logger log = LoggerFactory.getLogger(LoadTestManager.class);
 

@@ -61,12 +61,21 @@ public class HttpRequestSender implements RequestSender {
             future.whenComplete((response, throwable) -> {
                 try {
                     Duration duration = Duration.ofNanos(System.nanoTime() - startNanos);
-                    if (throwable != null || response == null || response.statusCode() >= 400) {
+                    if (throwable != null || response == null) {
                         logRequestError(response, throwable, duration);
                         metrics.recordRequestError(runId, duration);
-                    } else {
-                        logSlowResponse(response.statusCode(), duration);
+                        return;
+                    }
+                    int status = response.statusCode();
+                    if (status >= 200 && status < 300) {
+                        logSlowResponse(status, duration);
                         metrics.recordRequestSuccess(runId, duration);
+                    } else if (status == 429) {
+                        logSlowResponse(status, duration);
+                        metrics.recordRequestRateLimited(runId, duration);
+                    } else {
+                        logRequestError(response, null, duration);
+                        metrics.recordRequestError(runId, duration);
                     }
                 } finally {
                     if (semaphore != null) {

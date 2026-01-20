@@ -22,4 +22,3 @@ management:
 
 app:
   processing-delay-ms: 0
-  log-per-request: true
