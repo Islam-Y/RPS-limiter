@@ -1,12 +1,18 @@
 package ru.itmo.rate_limiter_service.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -19,6 +25,10 @@ import ru.itmo.rate_limiter_service.model.RateLimiterConfigPayload;
 @RequiredArgsConstructor
 public class RateLimiterConfigService {
 	private static final Logger log = LoggerFactory.getLogger(RateLimiterConfigService.class);
+	private static final int REDIS_SCAN_BATCH_SIZE = 500;
+	private static final String FIXED_KEY_PATTERN = "ratelimiter:fixed:*";
+	private static final String SLIDING_KEY_PATTERN = "ratelimiter:sliding:*";
+	private static final String TOKEN_KEY = "ratelimiter:token";
 
 	private final RateLimiterProperties properties;
 	private final StringRedisTemplate redisTemplate;
@@ -31,17 +41,40 @@ public class RateLimiterConfigService {
 		loadFromRedis();
 	}
 
+	@Scheduled(fixedDelayString = "${ratelimiter.config-refresh-interval:30s}")
+	public void refreshFromRedis() {
+		if (!properties.isLoadConfigFromRedis()) {
+			return;
+		}
+		try {
+			RateLimiterConfig base = current.get();
+			RateLimiterConfig loaded = loadConfigFromRedis(base);
+			if (loaded == null || isSameConfig(base, loaded)) {
+				return;
+			}
+			if (base.getAlgorithm() != loaded.getAlgorithm()) {
+				resetRedisState();
+				log.info("Switched rate-limiting algorithm from {} to {} (source=redis)",
+					base.getAlgorithm(), loaded.getAlgorithm());
+			}
+			current.set(loaded);
+			log.info("Refreshed rate limiter config from Redis: algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
+				loaded.getAlgorithm(), loaded.getLimit(), loaded.getWindowSeconds(),
+				loaded.getCapacity(), loaded.getFillRate());
+		} catch (Exception ex) {
+			log.warn("Failed to refresh config from Redis: {}", ex.getMessage());
+		}
+	}
+
 	private void loadFromRedis() {
 		if (!properties.isLoadConfigFromRedis()) {
 			return;
 		}
 		try {
-			String json = redisTemplate.opsForValue().get(properties.getConfigKey());
-			if (!StringUtils.hasText(json)) {
+			RateLimiterConfig loaded = loadConfigFromRedis(current.get());
+			if (loaded == null) {
 				return;
 			}
-			RateLimiterConfigPayload payload = objectMapper.readValue(json, RateLimiterConfigPayload.class);
-			RateLimiterConfig loaded = resolveConfig(payload, current.get(), false);
 			current.set(loaded);
 			log.info("Loaded rate limiter config from Redis: algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
 				loaded.getAlgorithm(), loaded.getLimit(), loaded.getWindowSeconds(),
@@ -57,13 +90,15 @@ public class RateLimiterConfigService {
 
 	public RateLimiterConfig applyConfig(RateLimiterConfigPayload payload, String source, boolean requireAllFields) {
 		Objects.requireNonNull(payload, "payload");
-		RateLimiterConfig updated = resolveConfig(payload, current.get(), requireAllFields);
-		RateLimiterConfig previous = current.getAndSet(updated);
-		persistConfig(updated);
-		if (previous.getAlgorithm() != updated.getAlgorithm()) {
+		RateLimiterConfig base = current.get();
+		RateLimiterConfig updated = resolveConfig(payload, base, requireAllFields);
+		if (base.getAlgorithm() != updated.getAlgorithm()) {
+			resetRedisState();
 			log.info("Switched rate-limiting algorithm from {} to {} (source={})",
-				previous.getAlgorithm(), updated.getAlgorithm(), source);
+				base.getAlgorithm(), updated.getAlgorithm(), source);
 		}
+		persistConfig(updated);
+		current.set(updated);
 		log.info("Applied rate limiter config (source={}): algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
 			source, updated.getAlgorithm(), updated.getLimit(), updated.getWindowSeconds(),
 			updated.getCapacity(), updated.getFillRate());
@@ -145,6 +180,26 @@ public class RateLimiterConfigService {
 		}
 	}
 
+	private RateLimiterConfig loadConfigFromRedis(RateLimiterConfig base) throws Exception {
+		String json = redisTemplate.opsForValue().get(properties.getConfigKey());
+		if (!StringUtils.hasText(json)) {
+			return null;
+		}
+		RateLimiterConfigPayload payload = objectMapper.readValue(json, RateLimiterConfigPayload.class);
+		return resolveConfig(payload, base, false);
+	}
+
+	private boolean isSameConfig(RateLimiterConfig first, RateLimiterConfig second) {
+		if (first == second) {
+			return true;
+		}
+		return first.getAlgorithm() == second.getAlgorithm()
+			&& first.getLimit() == second.getLimit()
+			&& first.getWindowSeconds() == second.getWindowSeconds()
+			&& first.getCapacity() == second.getCapacity()
+			&& Double.compare(first.getFillRate(), second.getFillRate()) == 0;
+	}
+
 	private RateLimiterConfig defaultConfig() {
 		return new RateLimiterConfig(
 			properties.getAlgorithm(),
@@ -152,5 +207,38 @@ public class RateLimiterConfigService {
 			properties.getWindowSeconds(),
 			properties.getCapacity(),
 			properties.getFillRate());
+	}
+
+	private void resetRedisState() {
+		try {
+			deleteByPattern(FIXED_KEY_PATTERN);
+			deleteByPattern(SLIDING_KEY_PATTERN);
+			redisTemplate.delete(TOKEN_KEY);
+		} catch (Exception ex) {
+			log.warn("Failed to reset Redis state after algorithm switch: {}", ex.getMessage());
+		}
+	}
+
+	private void deleteByPattern(String pattern) {
+		redisTemplate.execute((RedisCallback<Void>) connection -> {
+			ScanOptions options = ScanOptions.scanOptions()
+				.match(pattern)
+				.count(REDIS_SCAN_BATCH_SIZE)
+				.build();
+			List<byte[]> batch = new ArrayList<>(REDIS_SCAN_BATCH_SIZE);
+			try (Cursor<byte[]> cursor = connection.scan(options)) {
+				while (cursor.hasNext()) {
+					batch.add(cursor.next());
+					if (batch.size() >= REDIS_SCAN_BATCH_SIZE) {
+						connection.del(batch.toArray(new byte[0][]));
+						batch.clear();
+					}
+				}
+			}
+			if (!batch.isEmpty()) {
+				connection.del(batch.toArray(new byte[0][]));
+			}
+			return null;
+		});
 	}
 }

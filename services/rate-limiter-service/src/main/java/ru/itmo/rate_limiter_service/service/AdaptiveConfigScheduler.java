@@ -2,6 +2,8 @@ package ru.itmo.rate_limiter_service.service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +29,29 @@ public class AdaptiveConfigScheduler {
 	private final TrafficStats trafficStats;
 	private final RateLimiterMetrics metrics;
 	private final RestTemplate restTemplate;
+	private final RedisAvailability redisAvailability;
+	private final AtomicBoolean adaptiveEnabled = new AtomicBoolean();
+
+	@PostConstruct
+	public void init() {
+		adaptiveEnabled.set(properties.getAdaptive().isEnabled());
+	}
 
 	@Scheduled(fixedDelayString = "${ratelimiter.adaptive.interval:30s}")
 	public void updateFromAdaptiveModule() {
-		if (!properties.getAdaptive().isEnabled()) {
+		boolean enabled = properties.getAdaptive().isEnabled();
+		boolean wasEnabled = adaptiveEnabled.getAndSet(enabled);
+		if (!enabled) {
+			return;
+		}
+		if (!wasEnabled) {
+			trafficStats.resetSnapshotState();
+			log.info("Adaptive mode enabled, resetting traffic snapshot");
+			return;
+		}
+
+		if (!redisAvailability.isAvailable()) {
+			log.warn("Redis unavailable, skipping adaptive config update");
 			return;
 		}
 		String url = properties.getAdaptive().getUrl();

@@ -21,6 +21,7 @@ public class RateLimiterProperties {
 	private boolean loadConfigFromRedis = true;
 	private boolean storeConfigInRedis = true;
 	private Duration redisHealthInterval = Duration.ofSeconds(5);
+	private Duration configRefreshInterval = Duration.ofSeconds(30);
 	private Bounds bounds = new Bounds();
 	private AdaptiveProperties adaptive = new AdaptiveProperties();
 
