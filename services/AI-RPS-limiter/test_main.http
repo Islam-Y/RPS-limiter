@@ -1,0 +1,29 @@
+# Test your FastAPI endpoints
+
+GET http://127.0.0.1:8083/health
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8083/metrics
+Accept: text/plain
+
+###
+
+POST http://127.0.0.1:8083/v1/limit-config
+Content-Type: application/json
+
+{
+  "timestamp": "2024-01-01T00:00:00Z",
+  "observedRps": 120,
+  "rejectedRate": 0.02,
+  "latencyP95": 0.15,
+  "errors5xx": 0,
+  "currentConfig": {
+    "algorithm": "fixed",
+    "limit": 100,
+    "window": 60
+  }
+}
+
+###

@@ -1,0 +1,5 @@
+fastapi
+prometheus-client
+uvicorn[standard]
+pandas
+prophet
