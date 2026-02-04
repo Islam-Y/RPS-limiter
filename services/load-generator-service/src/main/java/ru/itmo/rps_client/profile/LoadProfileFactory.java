@@ -1,9 +1,9 @@
 package ru.itmo.rps_client.profile;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 import ru.itmo.rps_client.config.ProfileConfig;
 import ru.itmo.rps_client.exception.InvalidConfigurationException;
@@ -36,14 +36,14 @@ public class LoadProfileFactory {
         };
     }
 
-    private LoadProfile createConstant(JsonNode params) {
+    private LoadProfile createConstant(Map<String, Object> params) {
         requireParams(params, "rps");
         ConstantParams parsed = objectMapper.convertValue(params, ConstantParams.class);
         requirePositive(parsed.rps(), "rps");
         return new ConstantLoadProfile(parsed.rps());
     }
 
-    private LoadProfile createBurst(JsonNode params) {
+    private LoadProfile createBurst(Map<String, Object> params) {
         requireParams(params, "baseRps", "spikeRps", "spikeDuration", "spikePeriod");
         BurstParams parsed = objectMapper.convertValue(params, BurstParams.class);
         requireNonNegative(parsed.baseRps(), "baseRps");
@@ -56,7 +56,7 @@ public class LoadProfileFactory {
         return new BurstLoadProfile(parsed.baseRps(), parsed.spikeRps(), parsed.spikeDuration(), parsed.spikePeriod());
     }
 
-    private LoadProfile createSinusoidal(JsonNode params) {
+    private LoadProfile createSinusoidal(Map<String, Object> params) {
         requireParams(params, "minRps", "maxRps", "period");
         SinusoidalParams parsed = objectMapper.convertValue(params, SinusoidalParams.class);
         requireNonNegative(parsed.minRps(), "minRps");
@@ -68,14 +68,14 @@ public class LoadProfileFactory {
         return new SinusoidalLoadProfile(parsed.minRps(), parsed.maxRps(), parsed.period());
     }
 
-    private LoadProfile createPoisson(JsonNode params) {
+    private LoadProfile createPoisson(Map<String, Object> params) {
         requireParams(params, "averageRps");
         PoissonParams parsed = objectMapper.convertValue(params, PoissonParams.class);
         requirePositive(parsed.averageRps(), "averageRps");
         return new PoissonLoadProfile(parsed.averageRps());
     }
 
-    private LoadProfile createDdos(JsonNode params) {
+    private LoadProfile createDdos(Map<String, Object> params) {
         requireParams(params, "minRps", "maxRps", "maxSpikeDuration", "minIdleTime", "maxIdleTime");
         DdosParams parsed = objectMapper.convertValue(params, DdosParams.class);
         requireNonNegative(parsed.minRps(), "minRps");
@@ -93,12 +93,12 @@ public class LoadProfileFactory {
                 parsed.minIdleTime(), parsed.maxIdleTime());
     }
 
-    private void requireParams(JsonNode params, String... names) {
-        if (params == null || params.isNull()) {
+    private void requireParams(Map<String, Object> params, String... names) {
+        if (params == null || params.isEmpty()) {
             throw new InvalidConfigurationException("Profile params are required");
         }
         for (String name : names) {
-            if (!params.hasNonNull(name)) {
+            if (!params.containsKey(name) || params.get(name) == null) {
                 throw new InvalidConfigurationException("Missing required param: " + name);
             }
         }

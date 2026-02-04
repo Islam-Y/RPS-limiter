@@ -20,19 +20,18 @@
 - Grafana: `3000`
 
 ## 4. Рекомендуемая последовательность запуска
-1) Redis.
+1) Service C (rate‑limiter/proxy).
 2) Service B (целевой сервис).
-3) Service C (rate‑limiter/proxy).
-4) AI‑module (если включён adaptive режим).
-5) Prometheus/Grafana (опционально).
-6) Service A (генератор нагрузки).
+3) AI‑module (если включён adaptive режим).
+4) Prometheus/Grafana (опционально).
+5) Service A (генератор нагрузки).
 
 ## 5. Запуск компонентов
 Ниже — типовые команды. Конкретные варианты запуска и Docker‑инструкции смотрите в README каждого сервиса.
 
-### 5.1 Redis (Docker)
+### 5.1 Service C (rate-limiter-service)
 ```bash
-docker run --name rps-redis -p 6379:6379 redis:7-alpine
+docker compose up
 ```
 
 ### 5.2 Service B (application-service)
@@ -40,20 +39,22 @@ docker run --name rps-redis -p 6379:6379 redis:7-alpine
 ./gradlew bootRun
 ```
 
-### 5.3 Service C (rate-limiter-service)
-```bash
-./gradlew bootRun
-```
-
-### 5.4 AI‑module
+### 5.3 AI‑module
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8083
 ```
 
-### 5.5 Service A (load-generator-service)
+### 5.4 Service A (load-generator-service)
 ```bash
 ./gradlew bootRun
 ```
+
+### 5.5 Мониторинг (Prometheus + Grafana)
+```bash
+cd AI-RPS-limiter
+docker compose up -d
+```
+Grafana UI: http://localhost:3000 (default: admin/admin)
 
 ## 6. Минимальная конфигурация
 ### Service C (rate‑limiter)

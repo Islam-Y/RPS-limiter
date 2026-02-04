@@ -1,7 +1,7 @@
 package ru.itmo.rps_client.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record TestStatusResponse(
@@ -9,7 +9,7 @@ public record TestStatusResponse(
         String testId,
         String profile,
         String targetUrl,
-        JsonNode profileParams,
+        Map<String, Object> profileParams,
         Integer concurrency,
         Long elapsedTime,
         Long duration,
@@ -23,7 +23,7 @@ public record TestStatusResponse(
     public static TestStatusResponse running(String testId,
                                              String profile,
                                              String targetUrl,
-                                             JsonNode profileParams,
+                                             Map<String, Object> profileParams,
                                              Integer concurrency,
                                              long elapsedTime,
                                              long duration,
