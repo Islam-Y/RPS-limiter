@@ -11,7 +11,7 @@ server:
   port: 8082
 
 ratelimiter:
-  target-url: ${TARGET_URL:http://service-b:8081}
+  target-url: ${TARGET_URL:http://localhost:8081}
   algorithm: ${RATE_LIMIT_ALGORITHM:fixed}
   limit: ${RATE_LIMIT_LIMIT:100}
   window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}

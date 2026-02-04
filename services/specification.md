@@ -28,8 +28,8 @@
 #### Формат TestConfig
 ```json
 {
-  "targetUrl": "http://service-c:8082/api/test",
-  "duration": "60s",
+  "targetUrl": "http://rate-limiter-service:8082/api/test",
+  "duration": "PT60S",
   "profile": {
     "type": "constant",
     "params": { "rps": 100 }
@@ -38,6 +38,7 @@
 }
 ```
 - `duration`: число (сек), строка с единицами (`ms/s/m/h/d`) или ISO‑8601 (`PT30S`).
+- Для локального тестирования рекомендуется ISO‑8601 формат (`PT30S`/`PT60S`).
 - `profile.type`: `constant|burst|sinusoidal|poisson|ddos`.
 - `concurrency`: ограничение параллельных запросов.
 - Метод запроса фиксирован (GET), тело не используется.
@@ -63,6 +64,7 @@
   "fillRate": 50
 }
 ```
+- `token_bucket` и `token-bucket` поддерживаются как alias для `token`.
 - Для `fixed`/`sliding` обязательны `limit` и `window`.
 - Для `token` обязательны `capacity` и `fillRate`.
 - `burst` поддерживается как alias к `capacity`.
@@ -75,7 +77,7 @@
 #### Формат запроса к AI‑module
 ```json
 {
-  "timestamp": 1700000000000,
+  "timestamp": "2026-02-04T18:00:00Z",
   "observedRps": 120.5,
   "rejectedRate": 0.12,
   "latencyP95": 0.45,
@@ -87,6 +89,7 @@
   }
 }
 ```
+- `timestamp`: рекомендуется ISO‑8601 (`2026-02-04T18:00:00Z`) или Unix epoch в секундах.
 
 #### Формат ответа AI‑module
 ```json
@@ -129,6 +132,8 @@
 - `MIN_CHANGE_INTERVAL_SECONDS`, `MIN_RELATIVE_CHANGE`.
 - `MIN_RPS`, `MAX_RPS`, `REJECTED_RATE_THRESHOLD`, `LATENCY_P95_THRESHOLD`, `ERRORS_5XX_THRESHOLD`.
 - `ALLOW_ALGO_SWITCH`, `MIN_ALGO_SWITCH_INTERVAL_SECONDS`.
+- `BURSTINESS_THRESHOLD`, `BURSTINESS_POINTS`.
+- `TOKEN_MIN_HOLD_SECONDS`, `TOKEN_EXIT_NON_BURST_STREAK`, `MIN_TOKEN_FILL_RATE`.
 
 ## 8. Метрики
 ### Service A
@@ -174,7 +179,8 @@
 
 ### Сценарий 2: кратковременные всплески
 - Проверить Fixed/Sliding/Token.
-- Sliding сглаживает лучше Fixed, Token допускает короткие bursts.
+- Оценивать 429/latency в сравнении алгоритмов с одинаковым бюджетом (`limit/window` и `capacity/fillRate`).
+- Поведение зависит от тюнинга параметров: Token обычно лучше переносит короткие bursts, Sliding снижает эффект границы окна.
 
 ### Сценарий 3: аномальная нагрузка (DDoS)
 - Доля 429 высокая, Service B остаётся доступным.

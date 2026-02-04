@@ -1,0 +1,220 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "AI Requests by Result",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_limit_config_requests_total{job=\"ai-module\"}[$__rate_interval])) by (result)",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 3 }, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Forecast Duration p50 / p95",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(ai_forecast_duration_seconds_bucket{job=\"ai-module\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ai_forecast_duration_seconds_bucket{job=\"ai-module\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4 }, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Observed / Predicted / Recommended RPS",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "ai_last_observed_rps{job=\"ai-module\"}",
+          "legendFormat": "observed",
+          "refId": "A"
+        },
+        {
+          "expr": "ai_last_predicted_rps{job=\"ai-module\"}",
+          "legendFormat": "predicted",
+          "refId": "B"
+        },
+        {
+          "expr": "ai_last_recommended_rps{job=\"ai-module\"}",
+          "legendFormat": "recommended",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Recommended Limit/Window/Capacity/FillRate",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "ai_last_recommended_limit{job=\"ai-module\"}",
+          "legendFormat": "limit",
+          "refId": "A"
+        },
+        {
+          "expr": "ai_last_recommended_window_seconds{job=\"ai-module\"}",
+          "legendFormat": "window_s",
+          "refId": "B"
+        },
+        {
+          "expr": "ai_last_recommended_capacity{job=\"ai-module\"}",
+          "legendFormat": "capacity",
+          "refId": "C"
+        },
+        {
+          "expr": "ai_last_recommended_fill_rate{job=\"ai-module\"}",
+          "legendFormat": "fill_rate",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 2 }, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "History Points",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "ai_history_points{job=\"ai-module\"}",
+          "legendFormat": "points",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Valid For (s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        {
+          "expr": "ai_last_valid_for_seconds{job=\"ai-module\"}",
+          "legendFormat": "valid_for_s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 0 }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Active Algorithm",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        {
+          "expr": "ai_last_algorithm{job=\"ai-module\"}",
+          "legendFormat": "{{algorithm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "gray", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["rps-limiter", "ai", "adaptive", "spec"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "RPS Limiter - AI Adaptive Control",
+  "uid": "rps-ai-adaptive",
+  "version": 1,
+  "weekStart": ""
+}

@@ -66,6 +66,9 @@ MIN_ALGO_SWITCH_INTERVAL_SECONDS = int(
 )
 BURSTINESS_THRESHOLD = float(os.getenv("BURSTINESS_THRESHOLD", "1.5"))
 BURSTINESS_POINTS = int(os.getenv("BURSTINESS_POINTS", "10"))
+TOKEN_MIN_HOLD_SECONDS = int(os.getenv("TOKEN_MIN_HOLD_SECONDS", "60"))
+TOKEN_EXIT_NON_BURST_STREAK = int(os.getenv("TOKEN_EXIT_NON_BURST_STREAK", "3"))
+MIN_TOKEN_FILL_RATE = float(os.getenv("MIN_TOKEN_FILL_RATE", "5"))
 
 ALLOWED_ALGORITHMS = {"fixed", "sliding", "token"}
 
@@ -237,6 +240,7 @@ class RecommendationState:
     last_good_recommendation: Optional[LimitConfigResponse] = None
     last_good_config: Optional[LimitConfigIn] = None
     last_predicted_rps: Optional[float] = None
+    token_non_burst_streak: int = 0
 
 
 def parse_timestamp(value: Optional[Union[str, float, int]]) -> datetime:
@@ -487,7 +491,10 @@ def build_response(
             predictedRps=predicted_rps,
             validFor=FORECAST_SECONDS,
         )
-    fill_rate = clamp(target_rps, MIN_RPS, max_rps)
+    min_token_fill_rate = max(MIN_RPS, MIN_TOKEN_FILL_RATE)
+    if max_rps is not None:
+        min_token_fill_rate = min(min_token_fill_rate, max_rps)
+    fill_rate = clamp(target_rps, min_token_fill_rate, max_rps)
     capacity = int(math.ceil(fill_rate * TOKEN_CAPACITY_SECONDS))
     capacity = max(capacity, int(math.ceil(MIN_RPS * TOKEN_CAPACITY_SECONDS)))
     if capacity < fill_rate:
@@ -548,16 +555,34 @@ def recommend_config(
     if not math.isfinite(target_rps):
         target_rps = current_limit
 
+    bursty = is_bursty(history_points)
+    if bursty:
+        state.token_non_burst_streak = 0
+    elif current_config.algorithm == "token":
+        state.token_non_burst_streak += 1
+    else:
+        state.token_non_burst_streak = 0
+
     desired_algorithm = current_config.algorithm
     algo_switch_allowed = ALLOW_ALGO_SWITCH and (
         state.last_algo_switch_at is None
         or (now - state.last_algo_switch_at).total_seconds() >= MIN_ALGO_SWITCH_INTERVAL_SECONDS
     )
-    if algo_switch_allowed and is_bursty(history_points):
-        desired_algorithm = "token"
-    elif algo_switch_allowed and not is_bursty(history_points):
-        if desired_algorithm == "token":
-            desired_algorithm = "sliding"
+    if algo_switch_allowed:
+        if bursty:
+            desired_algorithm = "token"
+        elif current_config.algorithm == "token":
+            token_hold_active = (
+                state.last_algo_switch_at is not None
+                and (now - state.last_algo_switch_at).total_seconds() < TOKEN_MIN_HOLD_SECONDS
+            )
+            enough_non_bursty_samples = (
+                state.token_non_burst_streak >= TOKEN_EXIT_NON_BURST_STREAK
+            )
+            if token_hold_active or not enough_non_bursty_samples:
+                desired_algorithm = "token"
+            else:
+                desired_algorithm = "sliding"
 
     recommendation = build_response(
         desired_algorithm, target_rps, current_config, round(predicted_rps, 3)
@@ -592,6 +617,8 @@ def recommend_config(
     state.last_change_at = now
     if desired_algorithm != current_config.algorithm:
         state.last_algo_switch_at = now
+        if desired_algorithm != "token":
+            state.token_non_burst_streak = 0
     return recommendation
 
 

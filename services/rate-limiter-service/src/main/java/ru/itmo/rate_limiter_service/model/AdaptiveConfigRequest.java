@@ -12,10 +12,6 @@ public class AdaptiveConfigRequest {
 	private double rejectedRate;
 	private double latencyP95;
 	private long errors5xx;
-	private Algorithm algorithm;
-	private long limit;
-	@JsonProperty("window")
-	private long window;
-	private long capacity;
-	private double fillRate;
+	@JsonProperty("currentConfig")
+	private RateLimiterConfigPayload currentConfig;
 }

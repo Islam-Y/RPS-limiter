@@ -65,16 +65,19 @@ public class AdaptiveConfigScheduler {
 		RateLimiterConfig config = configService.getCurrent();
 
 		AdaptiveConfigRequest request = new AdaptiveConfigRequest();
-		request.setTimestamp(Instant.now().toEpochMilli());
+		request.setTimestamp(Instant.now().getEpochSecond());
 		request.setObservedRps(snapshot.observedRps());
 		request.setRejectedRate(snapshot.rejectedRate());
 		request.setErrors5xx(snapshot.errors5xx());
 		request.setLatencyP95(metrics.getRequestLatencyP95());
-		request.setAlgorithm(config.getAlgorithm());
-		request.setLimit(config.getLimit());
-		request.setWindow(config.getWindowSeconds());
-		request.setCapacity(config.getCapacity());
-		request.setFillRate(config.getFillRate());
+
+		RateLimiterConfigPayload currentConfig = new RateLimiterConfigPayload();
+		currentConfig.setAlgorithm(config.getAlgorithm());
+		currentConfig.setLimit(config.getLimit());
+		currentConfig.setWindow(config.getWindowSeconds());
+		currentConfig.setCapacity(config.getCapacity());
+		currentConfig.setFillRate(config.getFillRate());
+		request.setCurrentConfig(currentConfig);
 
 		log.info("AI request sent (interval {} ms) to {}", interval.toMillis(), url);
 

@@ -1,6 +1,8 @@
 package ru.itmo.rate_limiter_service.service;
 
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -11,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RedisHealthChecker {
 	private final StringRedisTemplate redisTemplate;
+	private final RedisConnectionFactory redisConnectionFactory;
 	private final RedisAvailability redisAvailability;
 	private final RateLimiterMetrics metrics;
 
@@ -23,10 +26,18 @@ public class RedisHealthChecker {
 			} else {
 				metrics.incrementRedisError();
 				redisAvailability.markUnavailable("Empty PING response");
+				resetConnection();
 			}
 		} catch (Exception ex) {
 			metrics.incrementRedisError();
 			redisAvailability.markUnavailable(ex.getMessage());
+			resetConnection();
+		}
+	}
+
+	private void resetConnection() {
+		if (redisConnectionFactory instanceof LettuceConnectionFactory lettuce) {
+			lettuce.resetConnection();
 		}
 	}
 }

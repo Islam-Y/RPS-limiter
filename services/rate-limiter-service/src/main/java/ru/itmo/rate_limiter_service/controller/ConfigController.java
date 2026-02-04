@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import ru.itmo.rate_limiter_service.model.Algorithm;
 import ru.itmo.rate_limiter_service.model.RateLimiterConfig;
@@ -32,11 +33,25 @@ public class ConfigController {
 	@PostMapping("/algorithm")
 	public RateLimiterConfigPayload updateAlgorithm(
 		@RequestBody(required = false) RateLimiterConfigPayload payload,
-		@RequestParam(required = false) Algorithm algorithm) {
-		Algorithm selected = algorithm != null ? algorithm : payload != null ? payload.getAlgorithm() : null;
+		@RequestParam(required = false) String algorithm) {
+		Algorithm selected = parseAlgorithm(algorithm);
+		if (selected == null && payload != null) {
+			selected = payload.getAlgorithm();
+		}
 		if (selected == null) {
 			throw new IllegalArgumentException("algorithm is required");
 		}
 		return configService.applyAlgorithm(selected).toPayload();
+	}
+
+	private Algorithm parseAlgorithm(String value) {
+		if (!StringUtils.hasText(value)) {
+			return null;
+		}
+		try {
+			return Algorithm.fromJson(value);
+		} catch (IllegalArgumentException ex) {
+			throw new IllegalArgumentException("Unsupported algorithm: " + value);
+		}
 	}
 }

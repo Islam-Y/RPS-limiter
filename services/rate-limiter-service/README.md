@@ -8,11 +8,12 @@ Service C — proxy/limiter между генератором нагрузки �
 
 Быстрый старт:
 ```bash
-docker compose up --build
+cd ..
+docker compose up --build -d
 curl http://localhost:8082/actuator/health
 ```
 
 Локальный запуск без Docker:
 ```bash
-./gradlew bootRun
+REDIS_HOST=localhost TARGET_URL=http://localhost:8081 ./gradlew bootRun
 ```

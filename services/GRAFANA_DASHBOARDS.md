@@ -4,7 +4,9 @@
 
 ## 0. Что нужно заранее
 - Сервисы A/B/C и AI должны быть запущены.
-- Prometheus и Grafana должны быть подняты через `AI-RPS-limiter/docker-compose.yml`.
+- Prometheus и Grafana поднимаются через корневой `docker-compose.yml`.
+- Актуальный scrape-конфиг Prometheus находится в `monitoring/prometheus.yml`.
+- Базовые дашборды уже провиженятся автоматически из `monitoring/grafana/dashboards`.
 - Метрики должны открываться в браузере:
   - Service A: `http://localhost:8080/actuator/prometheus`
   - Service B: `http://localhost:8081/actuator/prometheus`
@@ -13,9 +15,9 @@
 
 ## 1. Запусти Prometheus и Grafana
 ```bash
-cd AI-RPS-limiter
 docker compose up -d
 ```
+Команду запускайте из корня репозитория (`services/`), где лежит общий `docker-compose.yml`.
 
 Открой Grafana:
 ```text
@@ -23,16 +25,15 @@ http://localhost:3000
 ```
 Логин/пароль по умолчанию: `admin` / `admin`.
 
-## 2. Добавь Prometheus как источник данных (Datasource)
-1) Открой Grafana → шестерёнка **Configuration** → **Data sources**.  
-2) Нажми **Add data source** → выбери **Prometheus**.  
-3) В поле **URL** укажи:
-```text
-http://prometheus:9090
-```
-4) Нажми **Save & test** (должно быть зелёное “Data source is working”).
+## 2. Проверь готовые дашборды
+После старта compose в Grafana уже должны быть:
+1) `RPS Limiter - Platform Overview`
+2) `RPS Limiter - Service C Deep Dive`
+3) `RPS Limiter - AI Adaptive Control`
 
-## 3. Создай дашборд
+Если нужно создать свои панели поверх готовых, используйте datasource `Prometheus` (он также провиженится автоматически).
+
+## 3. Создай свой дашборд (опционально)
 1) В левом меню нажми **Dashboards** → **New** → **New Dashboard**.  
 2) Нажми **Add visualization** → выбери источник данных **Prometheus**.  
 3) Ты попал в редактор панели.

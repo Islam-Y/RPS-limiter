@@ -27,7 +27,7 @@ public class RedisRateLimiter implements RateLimiter {
 		return current
 		""", Long.class);
 
-	private static final RedisScript<Double> SLIDING_WINDOW_SCRIPT = new DefaultRedisScript<>("""
+	private static final RedisScript<Number> SLIDING_WINDOW_SCRIPT = new DefaultRedisScript<>("""
 		local current = redis.call('INCR', KEYS[1])
 		if current == 1 then
 		  redis.call('PEXPIRE', KEYS[1], ARGV[1])
@@ -40,7 +40,7 @@ public class RedisRateLimiter implements RateLimiter {
 		  weight = 0
 		end
 		return previous * weight + current
-		""", Double.class);
+		""", Number.class);
 
 	private static final RedisScript<Long> TOKEN_BUCKET_SCRIPT = new DefaultRedisScript<>("""
 		local capacity = tonumber(ARGV[1])
@@ -129,13 +129,13 @@ public class RedisRateLimiter implements RateLimiter {
 		String currentKey = "ratelimiter:sliding:" + currentWindowStart;
 		String previousKey = "ratelimiter:sliding:" + previousWindowStart;
 
-		Double estimate = redisTemplate.execute(
+		Number estimate = redisTemplate.execute(
 			SLIDING_WINDOW_SCRIPT,
 			List.of(currentKey, previousKey),
 			String.valueOf(ttlMs),
 			String.valueOf(elapsed),
 			String.valueOf(windowMs));
-		return estimate != null && estimate <= config.getLimit();
+		return estimate != null && estimate.doubleValue() <= config.getLimit();
 	}
 
 	private boolean allowToken(RateLimiterConfig config) {
