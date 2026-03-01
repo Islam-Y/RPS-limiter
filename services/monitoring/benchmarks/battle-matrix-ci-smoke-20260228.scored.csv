@@ -1,0 +1,7 @@
+scenario,algorithm,runs,stability_score,protection_score,latency_score,overall_score,mean_reject_percent,ci95_reject_percent,mean_error_percent,ci95_error_percent,mean_avg_proxy_latency_ms,ci95_avg_proxy_latency_ms,mean_p95_proxy_latency_ms,ci95_p95_proxy_latency_ms,mean_p99_proxy_latency_ms,ci95_p99_proxy_latency_ms,mean_effective_rps,ci95_effective_rps
+constant_low,fixed,1.000000,100.00,100.00,0.00,75.00,0.00,0.00,0.00,0.00,4.206,0.000,5.508,0.000,17.952,0.000,34.875,0.000
+constant_low,sliding,1.000000,100.00,100.00,31.11,82.78,0.00,0.00,0.00,0.00,3.936,0.000,6.530,0.000,17.952,0.000,34.875,0.000
+constant_low,token,1.000000,100.00,100.00,100.00,100.00,0.00,0.00,0.00,0.00,3.338,0.000,5.369,0.000,11.409,0.000,35.500,0.000
+ddos,fixed,1.000000,100.00,35.14,0.00,49.06,0.00,0.00,0.00,0.00,2.394,0.000,4.881,0.000,40.769,0.000,148.000,0.000
+ddos,sliding,1.000000,100.00,69.00,100.00,87.60,22.48,0.00,0.00,0.00,0.943,0.000,2.044,0.000,3.782,0.000,161.250,0.000
+ddos,token,1.000000,100.00,68.96,95.80,86.53,17.03,0.00,0.00,0.00,1.004,0.000,2.680,0.000,4.064,0.000,148.250,0.000

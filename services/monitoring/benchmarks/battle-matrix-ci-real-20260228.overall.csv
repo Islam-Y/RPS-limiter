@@ -1,0 +1,4 @@
+algorithm,runs_all,runs_normal,runs_ddos,mean_avg_latency_all_ms,ci95_avg_latency_all_ms,mean_p95_latency_all_ms,ci95_p95_latency_all_ms,mean_p99_latency_all_ms,ci95_p99_latency_all_ms,mean_avg_latency_ddos_ms,ci95_avg_latency_ddos_ms,success_normal_percent,ci95_success_normal_percent,mean_reject_normal_percent,ci95_reject_normal_percent,mean_reject_ddos_percent,ci95_reject_ddos_percent,mean_error_percent,ci95_error_percent,mean_effective_rps,ci95_effective_rps,mean_foreign_algo_delta
+fixed,60.000000,50.000000,10.000000,1.523,0.112,2.393,0.135,4.038,0.915,1.035,0.077,94.57,1.89,3.52,1.89,22.42,6.75,0.00,0.00,100.289,11.551,0.00
+sliding,60.000000,50.000000,10.000000,1.436,0.097,2.329,0.104,3.158,0.226,0.902,0.062,88.01,3.50,7.92,3.50,42.59,6.72,0.00,0.00,98.681,10.873,0.00
+token,60.000000,50.000000,10.000000,1.606,0.126,2.482,0.114,6.477,3.892,1.172,0.142,94.87,1.76,3.21,1.76,30.22,5.22,0.00,0.00,98.782,11.002,0.00

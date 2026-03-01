@@ -1,0 +1,7 @@
+scenario,algorithm,reject_static,reject_adaptive,reject_delta_pp,eff_rps_static,eff_rps_adaptive,eff_rps_delta,forwarded_static,forwarded_adaptive,foreign_algo_delta_adaptive
+constant_high,fixed,17.39,11.06,-6.33,47.886,40.571,-7.315,2769,2526,0
+constant_high,sliding,82.54,30.55,-51.99,110.443,131.443,21.000,1350,6390,7919
+constant_high,token,21.17,36.10,14.93,111.971,132.029,20.058,6179,5906,2355
+ddos,fixed,24.14,36.95,12.81,67.871,147.486,79.615,3604,6509,0
+ddos,sliding,87.18,71.48,-15.70,125.029,50.243,-74.786,1122,1003,0
+ddos,token,28.01,55.05,27.04,60.586,130.157,69.571,3053,4095,3956

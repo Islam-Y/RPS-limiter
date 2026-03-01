@@ -9,16 +9,24 @@ DURATION_SECONDS=12
 SCENARIOS_CSV="constant_low,sinusoidal,poisson,constant_high,burst,ddos"
 BASE_RPS_LIMIT="${BASE_RPS_LIMIT:-100}"
 WINDOW_SECONDS="${WINDOW_SECONDS:-10}"
+REPEATS=10
+RANDOMIZE_ORDER=1
+SEED="$(date +%s)"
 DISABLE_ADAPTIVE=0
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-battle-matrix-$(date +%Y%m%d-%H%M%S)}"
 
 RAW_CSV=""
+SUMMARY_CSV=""
+OVERALL_CSV=""
 SCORED_CSV=""
 MD_FILE=""
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGGREGATOR_SCRIPT="$SCRIPT_DIR/aggregate_battle_matrix.py"
+
 usage() {
   cat <<'EOF'
-Build a "battle matrix" for fixed/sliding/token with scenario-by-scenario scores.
+Build a repeated "battle matrix" for fixed/sliding/token with confidence intervals.
 
 Usage:
   scripts/battle_matrix.sh [options]
@@ -28,12 +36,22 @@ Options:
   --scenarios <csv>           Scenarios (default: constant_low,sinusoidal,poisson,constant_high,burst,ddos)
   --base-rps-limit <rps>      Base budget for fair config (default: 100)
   --window <seconds>          Window for fixed/sliding (default: 10)
+  --repeats <n>               Repeats per scenario (default: 10)
+  --seed <int>                Seed for deterministic randomized order
+  --no-random-order           Keep fixed order fixed->sliding->token
   --disable-adaptive          Run with ADAPTIVE_ENABLED=false
   --output-prefix <prefix>    Output files prefix (default: battle-matrix-<timestamp>)
   --help                      Show help
 
 Scenarios:
   constant_low, sinusoidal, poisson, constant_high, burst, ddos
+
+Outputs:
+  <prefix>.raw.csv      Per-run raw metrics
+  <prefix>.summary.csv  Scenario+algorithm mean + CI95
+  <prefix>.overall.csv  Algorithm-level aggregate view + CI95
+  <prefix>.scored.csv   Auxiliary scored matrix from summary means
+  <prefix>.md           Markdown table with scenario winners
 EOF
 }
 
@@ -54,6 +72,18 @@ while [[ $# -gt 0 ]]; do
     --window)
       WINDOW_SECONDS="$2"
       shift 2
+      ;;
+    --repeats)
+      REPEATS="$2"
+      shift 2
+      ;;
+    --seed)
+      SEED="$2"
+      shift 2
+      ;;
+    --no-random-order)
+      RANDOMIZE_ORDER=0
+      shift
       ;;
     --disable-adaptive)
       DISABLE_ADAPTIVE=1
@@ -87,6 +117,14 @@ if ! [[ "$WINDOW_SECONDS" =~ ^[0-9]+$ ]] || (( WINDOW_SECONDS <= 0 )); then
   echo "--window must be a positive integer" >&2
   exit 1
 fi
+if ! [[ "$REPEATS" =~ ^[0-9]+$ ]] || (( REPEATS <= 0 )); then
+  echo "--repeats must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "$SEED" =~ ^[0-9]+$ ]]; then
+  echo "--seed must be a non-negative integer" >&2
+  exit 1
+fi
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -101,6 +139,12 @@ require_cmd sed
 require_cmd mktemp
 require_cmd sort
 require_cmd cut
+require_cmd python3
+
+if [[ ! -f "$AGGREGATOR_SCRIPT" ]]; then
+  echo "Required script not found: $AGGREGATOR_SCRIPT" >&2
+  exit 1
+fi
 
 curl_call() {
   curl --retry 5 --retry-delay 1 --retry-all-errors -fsS "$@"
@@ -144,10 +188,12 @@ wait_for_http "$A_URL/actuator/health" "load-generator-service"
 wait_for_http "$C_URL/actuator/health" "rate-limiter-service"
 
 RAW_CSV="${OUTPUT_PREFIX}.raw.csv"
+SUMMARY_CSV="${OUTPUT_PREFIX}.summary.csv"
+OVERALL_CSV="${OUTPUT_PREFIX}.overall.csv"
 SCORED_CSV="${OUTPUT_PREFIX}.scored.csv"
 MD_FILE="${OUTPUT_PREFIX}.md"
 
-echo "scenario,algorithm,total_requests,forwarded,rejected,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_proxy_latency_ms,expected_reject_percent,stability_score,protection_score" >"$RAW_CSV"
+echo "scenario,repeat,order_pos,algorithm,total_requests,forwarded,rejected,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_proxy_latency_ms,p95_proxy_latency_ms,p99_proxy_latency_ms,expected_reject_percent,stability_score,protection_score,algo_counter_delta,foreign_algo_delta" >"$RAW_CSV"
 
 scenario_profile_json() {
   case "$1" in
@@ -232,174 +278,243 @@ wait_test_finished() {
   return 1
 }
 
+algorithm_order_csv() {
+  local repeat="$1"
+  local scenario_index="$2"
+  if (( RANDOMIZE_ORDER == 0 )); then
+    echo "fixed,sliding,token"
+    return 0
+  fi
+  python3 - "$SEED" "$repeat" "$scenario_index" <<'PY'
+import random
+import sys
+
+seed = int(sys.argv[1])
+repeat = int(sys.argv[2])
+scenario_index = int(sys.argv[3])
+algos = ["fixed", "sliding", "token"]
+rng = random.Random(seed + repeat * 1009 + scenario_index * 9176)
+rng.shuffle(algos)
+print(",".join(algos))
+PY
+}
+
+latency_percentiles_ms() {
+  local before_file="$1"
+  local after_file="$2"
+  python3 - "$before_file" "$after_file" <<'PY'
+import re
+import sys
+
+before_path, after_path = sys.argv[1], sys.argv[2]
+pattern = re.compile(r'^ratelimiter_request_duration_seconds_bucket\{[^}]*le="([^"]+)"[^}]*\}\s+([0-9eE+.-]+)$')
+
+def parse(path):
+    result = {}
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            match = pattern.match(line)
+            if not match:
+                continue
+            le = match.group(1)
+            value = float(match.group(2))
+            result[le] = value
+    return result
+
+before = parse(before_path)
+after = parse(after_path)
+deltas = {}
+for le, value_after in after.items():
+    value_before = before.get(le, 0.0)
+    delta = value_after - value_before
+    if delta < 0:
+        delta = 0.0
+    deltas[le] = delta
+
+total = deltas.get("+Inf", 0.0)
+if total <= 0:
+    print("0.000,0.000")
+    sys.exit(0)
+
+finite = []
+for le, cumulative in deltas.items():
+    if le == "+Inf":
+        continue
+    try:
+        upper = float(le)
+    except ValueError:
+        continue
+    finite.append((upper, cumulative))
+
+finite.sort(key=lambda item: item[0])
+if not finite:
+    print("0.000,0.000")
+    sys.exit(0)
+
+def quantile_value(q):
+    target = total * q
+    prev_cumulative = 0.0
+    prev_upper = 0.0
+    for upper, cumulative in finite:
+        if cumulative >= target:
+            bucket_count = cumulative - prev_cumulative
+            if bucket_count <= 0:
+                return upper
+            fraction = (target - prev_cumulative) / bucket_count
+            if fraction < 0:
+                fraction = 0
+            if fraction > 1:
+                fraction = 1
+            return prev_upper + (upper - prev_upper) * fraction
+        prev_cumulative = cumulative
+        prev_upper = upper
+    return finite[-1][0]
+
+p95_ms = quantile_value(0.95) * 1000.0
+p99_ms = quantile_value(0.99) * 1000.0
+print(f"{p95_ms:.3f},{p99_ms:.3f}")
+PY
+}
+
 IFS=',' read -r -a scenarios <<<"$SCENARIOS_CSV"
-algorithms=(fixed sliding token)
 
 echo "Running battle matrix..."
 echo "duration=${DURATION_SECONDS}s scenarios=${SCENARIOS_CSV}"
-echo "base_rps_limit=${BASE_RPS_LIMIT} window=${WINDOW_SECONDS}s"
+echo "base_rps_limit=${BASE_RPS_LIMIT} window=${WINDOW_SECONDS}s repeats=${REPEATS}"
+echo "randomize_order=$RANDOMIZE_ORDER seed=$SEED"
 echo
 
-for scenario in "${scenarios[@]}"; do
+for scenario_index in "${!scenarios[@]}"; do
+  scenario="${scenarios[$scenario_index]}"
   profile_json="$(scenario_profile_json "$scenario")" || {
     echo "Unsupported scenario: $scenario" >&2
     exit 1
   }
 
-  for algo in "${algorithms[@]}"; do
-    stop_test_if_running
-    configure_algorithm "$algo"
+  for repeat in $(seq 1 "$REPEATS"); do
+    order_csv="$(algorithm_order_csv "$repeat" "$scenario_index")"
+    IFS=',' read -r -a run_algorithms <<<"$order_csv"
+    order_pos=0
 
-    before_c="$(curl_call "$C_URL/actuator/prometheus")"
-    before_a="$(curl_call "$A_URL/actuator/prometheus")"
+    for algo in "${run_algorithms[@]}"; do
+      order_pos=$(( order_pos + 1 ))
+      stop_test_if_running
+      configure_algorithm "$algo"
 
-    f0="$(metric_from_text "$before_c" 'ratelimiter_requests_total{decision="forwarded"}')"
-    r0="$(metric_from_text "$before_c" 'ratelimiter_requests_total{decision="rejected"}')"
-    dsum0="$(metric_from_text "$before_c" 'ratelimiter_request_duration_seconds_sum')"
-    dcnt0="$(metric_from_text "$before_c" 'ratelimiter_request_duration_seconds_count')"
+      before_c="$(curl_call "$C_URL/actuator/prometheus")"
+      before_hist_file="$(mktemp)"
+      after_hist_file="$(mktemp)"
+      printf '%s\n' "$before_c" >"$before_hist_file"
 
-    as0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="success"}')"
-    ar0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="rate_limited"}')"
-    ae0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="error"}')"
+      f0="$(metric_from_text "$before_c" 'ratelimiter_requests_total{decision="forwarded"}')"
+      r0="$(metric_from_text "$before_c" 'ratelimiter_requests_total{decision="rejected"}')"
+      dsum0="$(metric_from_text "$before_c" 'ratelimiter_request_duration_seconds_sum')"
+      dcnt0="$(metric_from_text "$before_c" 'ratelimiter_request_duration_seconds_count')"
+      a0="$(metric_from_text "$before_c" "ratelimiter_requests_by_algorithm_total{algorithm=\"$algo\"}")"
 
-    start_resp="$(start_test "$profile_json")"
-    if ! echo "$start_resp" | grep -q '"status":"started"'; then
-      echo "Failed to start test for scenario=$scenario algorithm=$algo: $start_resp" >&2
-      exit 1
-    fi
-    if ! wait_test_finished; then
-      echo "Timed out waiting for test completion scenario=$scenario algorithm=$algo" >&2
-      exit 1
-    fi
+      start_resp="$(start_test "$profile_json")"
+      if ! echo "$start_resp" | grep -q '"status":"started"'; then
+        echo "Failed to start test for scenario=$scenario repeat=$repeat algorithm=$algo: $start_resp" >&2
+        rm -f "$before_hist_file" "$after_hist_file"
+        exit 1
+      fi
 
-    after_c="$(curl_call "$C_URL/actuator/prometheus")"
-    after_a="$(curl_call "$A_URL/actuator/prometheus")"
+      # The load-generator resets its counters at test start, so baseline must be captured after start.
+      sleep 0.2
+      before_a="$(curl_call "$A_URL/actuator/prometheus")"
+      as0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="success"}')"
+      ar0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="rate_limited"}')"
+      ae0="$(metric_from_text "$before_a" 'loadgen_requests_total{status="error"}')"
 
-    f1="$(metric_from_text "$after_c" 'ratelimiter_requests_total{decision="forwarded"}')"
-    r1="$(metric_from_text "$after_c" 'ratelimiter_requests_total{decision="rejected"}')"
-    dsum1="$(metric_from_text "$after_c" 'ratelimiter_request_duration_seconds_sum')"
-    dcnt1="$(metric_from_text "$after_c" 'ratelimiter_request_duration_seconds_count')"
+      if ! wait_test_finished; then
+        echo "Timed out waiting for test completion scenario=$scenario repeat=$repeat algorithm=$algo" >&2
+        rm -f "$before_hist_file" "$after_hist_file"
+        exit 1
+      fi
 
-    as1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="success"}')"
-    ar1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="rate_limited"}')"
-    ae1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="error"}')"
+      after_c="$(curl_call "$C_URL/actuator/prometheus")"
+      after_a="$(curl_call "$A_URL/actuator/prometheus")"
+      printf '%s\n' "$after_c" >"$after_hist_file"
 
-    forwarded="$(delta_value "$f0" "$f1")"
-    rejected="$(delta_value "$r0" "$r1")"
-    total="$(awk -v f="$forwarded" -v r="$rejected" 'BEGIN {printf "%.6f", f+r}')"
-    reject_pct="$(awk -v r="$rejected" -v t="$total" 'BEGIN {if (t<=0) printf "0.00"; else printf "%.2f", (r*100.0)/t}')"
-    effective_rps="$(awk -v t="$total" -v d="$DURATION_SECONDS" 'BEGIN {printf "%.3f", t/d}')"
+      f1="$(metric_from_text "$after_c" 'ratelimiter_requests_total{decision="forwarded"}')"
+      r1="$(metric_from_text "$after_c" 'ratelimiter_requests_total{decision="rejected"}')"
+      dsum1="$(metric_from_text "$after_c" 'ratelimiter_request_duration_seconds_sum')"
+      dcnt1="$(metric_from_text "$after_c" 'ratelimiter_request_duration_seconds_count')"
+      a1="$(metric_from_text "$after_c" "ratelimiter_requests_by_algorithm_total{algorithm=\"$algo\"}")"
 
-    dsum="$(delta_value "$dsum0" "$dsum1")"
-    dcnt="$(delta_value "$dcnt0" "$dcnt1")"
-    avg_latency_ms="$(awk -v s="$dsum" -v c="$dcnt" 'BEGIN {if (c<=0) printf "0.000"; else printf "%.3f", (s/c)*1000.0}')"
+      as1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="success"}')"
+      ar1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="rate_limited"}')"
+      ae1="$(metric_from_text "$after_a" 'loadgen_requests_total{status="error"}')"
 
-    ls="$(delta_value "$as0" "$as1")"
-    lr="$(delta_value "$ar0" "$ar1")"
-    le="$(delta_value "$ae0" "$ae1")"
-    load_total="$(awk -v s="$ls" -v r="$lr" -v e="$le" 'BEGIN {printf "%.6f", s+r+e}')"
-    error_pct="$(awk -v e="$le" -v t="$load_total" 'BEGIN {if (t<=0) printf "0.00"; else printf "%.2f", (e*100.0)/t}')"
+      forwarded="$(delta_value "$f0" "$f1")"
+      rejected="$(delta_value "$r0" "$r1")"
+      total="$(awk -v f="$forwarded" -v r="$rejected" 'BEGIN {printf "%.6f", f+r}')"
+      algo_delta="$(delta_value "$a0" "$a1")"
+      foreign_delta="$(awk -v t="$total" -v a="$algo_delta" 'BEGIN {d=t-a; if (d<0) d=0; printf "%.6f", d}')"
+      reject_pct="$(awk -v r="$rejected" -v t="$total" 'BEGIN {if (t<=0) printf "0.00"; else printf "%.2f", (r*100.0)/t}')"
+      effective_rps="$(awk -v t="$total" -v d="$DURATION_SECONDS" 'BEGIN {printf "%.3f", t/d}')"
 
-    expected_reject_pct="$(awk -v erps="$effective_rps" -v base="$BASE_RPS_LIMIT" 'BEGIN {
-      if (erps<=0 || erps<=base) printf "0.00";
-      else printf "%.2f", ((erps-base)/erps)*100.0;
-    }')"
+      dsum="$(delta_value "$dsum0" "$dsum1")"
+      dcnt="$(delta_value "$dcnt0" "$dcnt1")"
+      avg_latency_ms="$(awk -v s="$dsum" -v c="$dcnt" 'BEGIN {if (c<=0) printf "0.000"; else printf "%.3f", (s/c)*1000.0}')"
 
-    stability_score="$(awk -v ep="$error_pct" 'BEGIN {
-      # error_pct is already in percent units (0..100), so subtract directly.
-      s = 100.0 - ep;
-      if (s<0) s=0;
-      if (s>100) s=100;
-      printf "%.2f", s;
-    }')"
+      percentiles_ms="$(latency_percentiles_ms "$before_hist_file" "$after_hist_file")"
+      p95_latency_ms="$(echo "$percentiles_ms" | cut -d, -f1)"
+      p99_latency_ms="$(echo "$percentiles_ms" | cut -d, -f2)"
+      rm -f "$before_hist_file" "$after_hist_file"
 
-    protection_score="$(awk -v rp="$reject_pct" -v expected="$expected_reject_pct" 'BEGIN {
-      if (expected <= 0.01) {
-        p = 100.0 - rp*5.0;
-      } else {
-        p = 100.0 - ( (rp>expected ? rp-expected : expected-rp) * 2.0 );
-      }
-      if (p<0) p=0;
-      if (p>100) p=100;
-      printf "%.2f", p;
-    }')"
+      ls="$(delta_value "$as0" "$as1")"
+      lr="$(delta_value "$ar0" "$ar1")"
+      le="$(delta_value "$ae0" "$ae1")"
+      load_total="$(awk -v s="$ls" -v r="$lr" -v e="$le" 'BEGIN {printf "%.6f", s+r+e}')"
+      error_pct="$(awk -v e="$le" -v t="$load_total" 'BEGIN {if (t<=0) printf "0.00"; else printf "%.2f", (e*100.0)/t}')"
 
-    echo "$scenario,$algo,$total,$forwarded,$rejected,$reject_pct,$effective_rps,$load_total,$le,$error_pct,$avg_latency_ms,$expected_reject_pct,$stability_score,$protection_score" >>"$RAW_CSV"
+      expected_reject_pct="$(awk -v erps="$effective_rps" -v base="$BASE_RPS_LIMIT" 'BEGIN {
+        if (erps<=0 || erps<=base) printf "0.00";
+        else printf "%.2f", ((erps-base)/erps)*100.0;
+      }')"
 
-    printf "scenario=%-13s algo=%-7s reject%%=%6.2f latency=%7.3fms stab=%6.2f prot=%6.2f\n" \
-      "$scenario" "$algo" "$reject_pct" "$avg_latency_ms" "$stability_score" "$protection_score"
+      stability_score="$(awk -v ep="$error_pct" 'BEGIN {
+        s = 100.0 - ep;
+        if (s<0) s=0;
+        if (s>100) s=100;
+        printf "%.2f", s;
+      }')"
+
+      protection_score="$(awk -v rp="$reject_pct" -v expected="$expected_reject_pct" 'BEGIN {
+        if (expected <= 0.01) {
+          p = 100.0 - rp*5.0;
+        } else {
+          p = 100.0 - ( (rp>expected ? rp-expected : expected-rp) * 2.0 );
+        }
+        if (p<0) p=0;
+        if (p>100) p=100;
+        printf "%.2f", p;
+      }')"
+
+      echo "$scenario,$repeat,$order_pos,$algo,$total,$forwarded,$rejected,$reject_pct,$effective_rps,$load_total,$le,$error_pct,$avg_latency_ms,$p95_latency_ms,$p99_latency_ms,$expected_reject_pct,$stability_score,$protection_score,$algo_delta,$foreign_delta" >>"$RAW_CSV"
+
+      printf "scenario=%-13s repeat=%2d algo=%-7s order=%d reject%%=%6.2f lat=%7.3fms p95=%7.3fms p99=%7.3fms err%%=%5.2f foreign=%8.0f\n" \
+        "$scenario" "$repeat" "$algo" "$order_pos" "$reject_pct" "$avg_latency_ms" "$p95_latency_ms" "$p99_latency_ms" "$error_pct" "$foreign_delta"
+    done
   done
 done
 
-awk -F, '
-BEGIN { OFS="," }
-NR==1 { next }
-{
-  scenario[++n]=$1
-  algorithm[n]=$2
-  rejectPct[n]=$6+0
-  effRps[n]=$7+0
-  errorPct[n]=$10+0
-  latency[n]=$11+0
-  expected[n]=$12+0
-  stability[n]=$13+0
-  protection[n]=$14+0
-
-  key=$1
-  if (!(key in minLat) || latency[n] < minLat[key]) minLat[key]=latency[n]
-  if (!(key in maxLat) || latency[n] > maxLat[key]) maxLat[key]=latency[n]
-}
-END {
-  print "scenario,algorithm,stability_score,protection_score,latency_score,overall_score,reject_percent,error_percent,avg_proxy_latency_ms,effective_rps,expected_reject_percent"
-  for (i=1; i<=n; i++) {
-    key=scenario[i]
-    min=minLat[key]
-    max=maxLat[key]
-    if (max-min < 1e-9) latScore=100.0
-    else latScore=((max-latency[i])/(max-min))*100.0
-
-    overall=0.35*stability[i] + 0.40*protection[i] + 0.25*latScore
-    printf "%s,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.2f\n",
-      scenario[i], algorithm[i], stability[i], protection[i], latScore, overall,
-      rejectPct[i], errorPct[i], latency[i], effRps[i], expected[i]
-  }
-}
-' "$RAW_CSV" >"$SCORED_CSV"
-
-avg_fixed="$(awk -F, 'NR>1 && $2=="fixed" {s+=$6;n++} END {if(n==0) print "0.00"; else printf "%.2f", s/n}' "$SCORED_CSV")"
-avg_sliding="$(awk -F, 'NR>1 && $2=="sliding" {s+=$6;n++} END {if(n==0) print "0.00"; else printf "%.2f", s/n}' "$SCORED_CSV")"
-avg_token="$(awk -F, 'NR>1 && $2=="token" {s+=$6;n++} END {if(n==0) print "0.00"; else printf "%.2f", s/n}' "$SCORED_CSV")"
-
-ranked="$(printf "fixed,%s\nsliding,%s\ntoken,%s\n" "$avg_fixed" "$avg_sliding" "$avg_token" | sort -t, -k2,2nr)"
-rank1="$(echo "$ranked" | sed -n '1p' | cut -d, -f1)"
-rank2="$(echo "$ranked" | sed -n '2p' | cut -d, -f1)"
-rank3="$(echo "$ranked" | sed -n '3p' | cut -d, -f1)"
-
-{
-  echo "| Scenario | fixed | sliding | token | Winner |"
-  echo "|---|---:|---:|---:|---|"
-  for sc in "${scenarios[@]}"; do
-    fixed_cell="$(awk -F, -v s="$sc" '$1==s && $2=="fixed" {printf "%.1f (S%.0f/P%.0f/L%.0f)", $6,$3,$4,$5}' "$SCORED_CSV")"
-    sliding_cell="$(awk -F, -v s="$sc" '$1==s && $2=="sliding" {printf "%.1f (S%.0f/P%.0f/L%.0f)", $6,$3,$4,$5}' "$SCORED_CSV")"
-    token_cell="$(awk -F, -v s="$sc" '$1==s && $2=="token" {printf "%.1f (S%.0f/P%.0f/L%.0f)", $6,$3,$4,$5}' "$SCORED_CSV")"
-    winner="$(awk -F, -v s="$sc" '
-      $1==s {score[$2]=$6+0}
-      END {
-        best="fixed"; b=score["fixed"];
-        if (score["sliding"]>b) {best="sliding"; b=score["sliding"]}
-        if (score["token"]>b) {best="token"; b=score["token"]}
-        printf "%s", best
-      }' "$SCORED_CSV")"
-    echo "| $sc | $fixed_cell | $sliding_cell | $token_cell | $winner |"
-  done
-  echo "| **Avg Overall** | **$avg_fixed** | **$avg_sliding** | **$avg_token** | **$rank1** |"
-  echo "| **Rank** | $( [[ "$rank1" == "fixed" ]] && echo 1 || ([[ "$rank2" == "fixed" ]] && echo 2 || echo 3) ) | $( [[ "$rank1" == "sliding" ]] && echo 1 || ([[ "$rank2" == "sliding" ]] && echo 2 || echo 3) ) | $( [[ "$rank1" == "token" ]] && echo 1 || ([[ "$rank2" == "token" ]] && echo 2 || echo 3) ) | $rank1 > $rank2 > $rank3 |"
-} >"$MD_FILE"
+python3 "$AGGREGATOR_SCRIPT" \
+  --raw "$RAW_CSV" \
+  --summary "$SUMMARY_CSV" \
+  --overall "$OVERALL_CSV" \
+  --scored "$SCORED_CSV" \
+  --markdown "$MD_FILE" \
+  --scenarios "$SCENARIOS_CSV"
 
 echo
 echo "Matrix ready:"
-echo "- Raw metrics:    $RAW_CSV"
-echo "- Scored metrics: $SCORED_CSV"
-echo "- Markdown table: $MD_FILE"
+echo "- Raw metrics:     $RAW_CSV"
+echo "- Summary metrics: $SUMMARY_CSV"
+echo "- Overall metrics: $OVERALL_CSV"
+echo "- Scored metrics:  $SCORED_CSV"
+echo "- Markdown table:  $MD_FILE"
 echo
 cat "$MD_FILE"

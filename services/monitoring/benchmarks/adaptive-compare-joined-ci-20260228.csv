@@ -1,0 +1,7 @@
+scenario,algorithm,runs_static,runs_adaptive,reject_static_mean,reject_static_ci95,reject_adaptive_mean,reject_adaptive_ci95,reject_delta_pp,eff_rps_static_mean,eff_rps_static_ci95,eff_rps_adaptive_mean,eff_rps_adaptive_ci95,eff_rps_delta,latency_static_mean_ms,latency_static_ci95_ms,latency_adaptive_mean_ms,latency_adaptive_ci95_ms,latency_delta_ms,p95_static_mean_ms,p95_adaptive_mean_ms,p99_static_mean_ms,p99_adaptive_mean_ms,error_static_mean,error_adaptive_mean,foreign_algo_delta_adaptive_mean
+constant_high,fixed,10,10,16.39,8.84,14.41,7.82,-1.98,142.375,3.785,145.408,0.713,3.033,1.837,0.966,1.297,0.085,-0.540,3.524,2.317,22.803,3.717,0.00,0.00,0.00
+constant_high,sliding,10,10,40.98,15.73,43.41,14.74,2.43,140.692,4.131,143.342,2.665,2.650,1.095,0.163,1.097,0.156,0.002,2.106,2.042,3.256,4.018,0.00,0.00,0.00
+constant_high,token,10,10,19.76,3.06,23.09,3.03,3.33,142.275,4.194,144.875,0.818,2.600,1.445,0.290,1.358,0.158,-0.087,2.388,2.415,8.600,4.370,0.00,0.00,0.00
+ddos,fixed,10,10,24.25,10.35,16.93,7.08,-7.32,150.883,8.036,159.175,10.862,8.292,1.160,0.185,1.154,0.096,-0.006,2.061,2.066,5.728,3.476,0.00,0.00,13.80
+ddos,sliding,10,10,42.48,15.83,43.86,15.35,1.38,146.808,10.661,148.958,13.726,2.150,0.916,0.118,2.199,2.893,1.282,1.854,5.230,2.423,36.371,0.00,0.00,0.00
+ddos,token,10,10,26.61,2.62,24.67,2.56,-1.94,151.500,5.294,147.875,6.849,-3.625,1.226,0.173,1.159,0.035,-0.066,2.158,2.268,7.939,2.988,0.00,0.00,0.00
