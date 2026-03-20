@@ -60,6 +60,9 @@ def set_run_font(run, size=14, bold=False):
     run.font.size = Pt(size)
     run.font.bold = bold
     run.font.color.rgb = RGBColor(0, 0, 0)
+    no_proof = run._element.rPr.find(qn("w:noProof"))
+    if no_proof is None:
+        run._element.rPr.append(OxmlElement("w:noProof"))
     lang = run._element.rPr.find(qn("w:lang"))
     if lang is None:
         lang = OxmlElement("w:lang")
@@ -192,7 +195,7 @@ def parse_markdown_row(row: str) -> List[str]:
     return parts
 
 
-def add_heading(document: Document, text: str, level: int, structural: bool = False):
+def add_heading(document: Document, text: str, level: int, structural: bool = False, center: bool = False):
     p = document.add_paragraph(style=f"Heading {level}")
     heading_text = normalize_quotes(text.upper() if structural else text)
     run = p.add_run(heading_text)
@@ -202,7 +205,7 @@ def add_heading(document: Document, text: str, level: int, structural: bool = Fa
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
     pf.line_spacing = 1.5
-    if structural:
+    if structural or center:
         pf.first_line_indent = Cm(0)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     else:
@@ -216,6 +219,17 @@ def add_plain_paragraph(document: Document, text: str, indent=True, center=False
     set_paragraph_base(p, indent=indent)
     if center:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    return p
+
+
+def add_empty_paragraph(document: Document):
+    p = document.add_paragraph()
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    pf.line_spacing = 1.5
+    pf.first_line_indent = Cm(0)
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     return p
 
 
@@ -410,7 +424,8 @@ def build_doc(topic: str, terms: List[str], abbr: List[str], body: List[str], so
 
     # Main body: from Introduction to before sources
     i = 0
-    first_main_heading_seen = False
+    current_chapter: Optional[int] = None
+    first_subheading_in_chapter = False
     while i < len(body):
         line = body[i].rstrip("\n")
         stripped = line.strip()
@@ -423,24 +438,39 @@ def build_doc(topic: str, terms: List[str], abbr: List[str], body: List[str], so
         if stripped in {"Введение", "Заключение"}:
             insert_page_break(doc)
             add_heading(doc, stripped, level=1, structural=True)
-            first_main_heading_seen = True
+            add_empty_paragraph(doc)
             i += 1
             continue
 
         if is_chapter(stripped):
             insert_page_break(doc)
-            add_heading(doc, stripped, level=1, structural=False)
-            first_main_heading_seen = True
+            add_heading(doc, stripped, level=1, structural=False, center=True)
+            add_empty_paragraph(doc)
+            m = re.match(r"^Глава\s+(\d+)\.", stripped)
+            current_chapter = int(m.group(1)) if m else None
+            first_subheading_in_chapter = False
             i += 1
             continue
 
         if is_subheading(stripped):
-            add_heading(doc, stripped, level=2, structural=False)
-            i += 1
-            continue
-
-        if stripped.startswith("Выводы по главе"):
-            add_heading(doc, stripped, level=2, structural=False)
+            m = re.match(r"^(\d+)\.(\d+)\.\s", stripped)
+            major = int(m.group(1)) if m else None
+            minor = int(m.group(2)) if m else None
+            need_break = True
+            if (
+                major is not None
+                and minor == 1
+                and current_chapter is not None
+                and major == current_chapter
+                and not first_subheading_in_chapter
+            ):
+                need_break = False
+            if need_break:
+                insert_page_break(doc)
+            add_heading(doc, stripped, level=2, structural=False, center=True)
+            add_empty_paragraph(doc)
+            if major is not None and current_chapter == major:
+                first_subheading_in_chapter = True
             i += 1
             continue
 
