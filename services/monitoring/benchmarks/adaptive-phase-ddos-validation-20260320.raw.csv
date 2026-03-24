@@ -1,0 +1,8 @@
+scenario,mode,repeat,phase_order,phase_name,phase_duration_s,total_requests,forwarded,rejected,success_percent,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_proxy_latency_ms,p95_proxy_latency_ms,start_algorithm,end_algorithm,fixed_requests,token_requests,sliding_requests,fixed_share_percent,token_share_percent,sliding_share_percent
+phase_ddos_recovery,static_token,1,1,normal,30,1240.000000,1240.000000,0.000000,100.00,0.00,41.333,1251.000000,0.000000,0.00,10.021,21.571,token,token,0.000000,1240.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_token,1,2,attack,30,6624.000000,3118.000000,3506.000000,47.07,52.93,220.800,6605.000000,0.000000,0.00,4.123,10.982,token,token,0.000000,6624.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_token,1,3,recovery,30,1172.000000,1172.000000,0.000000,100.00,0.00,39.067,1168.000000,0.000000,0.00,3.045,4.093,token,token,0.000000,1172.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_sliding,1,1,normal,30,1281.000000,1281.000000,0.000000,100.00,0.00,42.700,1269.000000,0.000000,0.00,2.886,5.167,sliding,sliding,0.000000,0.000000,1281.000000,0.00,0.00,100.00
+phase_ddos_recovery,static_sliding,1,2,attack,30,6290.000000,664.000000,5626.000000,10.56,89.44,209.667,6290.000000,0.000000,0.00,1.636,4.280,sliding,sliding,0.000000,0.000000,6290.000000,0.00,0.00,100.00
+phase_ddos_recovery,static_sliding,1,3,recovery,30,1180.000000,928.000000,252.000000,78.64,21.36,39.333,1180.000000,0.000000,0.00,2.049,2.816,sliding,sliding,0.000000,0.000000,1180.000000,0.00,0.00,100.00
+phase_ddos_recovery,adaptive,1,1,normal,30,1253.000000,1253.000000,0.000000,100.00,0.00,41.767,1246.000000,0.000000,0.00,5.484,8.700,token,sliding,0.000000,388.000000,865.000000,0.00,30.97,69.03

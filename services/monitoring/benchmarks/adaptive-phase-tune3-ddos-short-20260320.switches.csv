@@ -1,0 +1,4 @@
+scenario,mode,repeat,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+phase_ddos_recovery,static_token,1,0,60,0,0,0,0:token
+phase_ddos_recovery,static_sliding,1,0,0,60,0,0,0:sliding
+phase_ddos_recovery,adaptive,1,1,28,29,0,0,0:token|29:sliding

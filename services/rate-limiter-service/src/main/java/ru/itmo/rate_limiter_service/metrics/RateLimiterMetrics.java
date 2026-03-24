@@ -109,9 +109,9 @@ public class RateLimiterMetrics {
 		HistogramSnapshot snapshot = requestTimer.takeSnapshot();
 		for (ValueAtPercentile percentile : snapshot.percentileValues()) {
 			if (percentile.percentile() == 0.95) {
-				return percentile.value();
+				return percentile.value() / 1_000_000_000.0;
 			}
 		}
-		return snapshot.max();
+		return snapshot.max() / 1_000_000_000.0;
 	}
 }

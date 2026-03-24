@@ -10,6 +10,8 @@ import ru.itmo.rps_client.exception.InvalidConfigurationException;
 import ru.itmo.rps_client.profile.params.BurstParams;
 import ru.itmo.rps_client.profile.params.ConstantParams;
 import ru.itmo.rps_client.profile.params.DdosParams;
+import ru.itmo.rps_client.profile.params.PhasedParams;
+import ru.itmo.rps_client.profile.params.PhasedStageParams;
 import ru.itmo.rps_client.profile.params.PoissonParams;
 import ru.itmo.rps_client.profile.params.SinusoidalParams;
 
@@ -32,6 +34,7 @@ public class LoadProfileFactory {
             case "sinusoidal" -> createSinusoidal(profileConfig.params());
             case "poisson" -> createPoisson(profileConfig.params());
             case "ddos" -> createDdos(profileConfig.params());
+            case "phased" -> createPhased(profileConfig.params());
             default -> throw new InvalidConfigurationException("Unsupported profile type: " + profileConfig.type());
         };
     }
@@ -91,6 +94,31 @@ public class LoadProfileFactory {
         }
         return new DdosLoadProfile(parsed.minRps(), parsed.maxRps(), parsed.maxSpikeDuration(),
                 parsed.minIdleTime(), parsed.maxIdleTime());
+    }
+
+    private LoadProfile createPhased(Map<String, Object> params) {
+        requireParams(params, "phases");
+        PhasedParams parsed = objectMapper.convertValue(params, PhasedParams.class);
+        if (parsed.phases() == null || parsed.phases().isEmpty()) {
+            throw new InvalidConfigurationException("phases must contain at least one stage");
+        }
+        var phases = parsed.phases().stream()
+                .map(this::createPhase)
+                .toList();
+        return new PhasedLoadProfile(phases);
+    }
+
+    private PhasedLoadProfile.Phase createPhase(PhasedStageParams phase) {
+        if (phase == null) {
+            throw new InvalidConfigurationException("phase entry must not be null");
+        }
+        requireDurationPositive(phase.duration(), "phase.duration");
+        if (phase.type() == null || phase.type().isBlank()) {
+            throw new InvalidConfigurationException("phase.type is required");
+        }
+        LoadProfile nested = create(new ProfileConfig(phase.type(), phase.params()));
+        String name = (phase.name() == null || phase.name().isBlank()) ? phase.type() : phase.name();
+        return new PhasedLoadProfile.Phase(name, phase.duration(), nested);
     }
 
     private void requireParams(Map<String, Object> params, String... names) {

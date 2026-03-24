@@ -1,0 +1,10 @@
+scenario,mode,repeat,phase_order,phase_name,phase_duration_s,total_requests,forwarded,rejected,success_percent,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_proxy_latency_ms,p95_proxy_latency_ms,start_algorithm,end_algorithm,fixed_requests,token_requests,sliding_requests,fixed_share_percent,token_share_percent,sliding_share_percent
+phase_ddos_recovery,static_token,1,1,normal,30,1345.000000,1345.000000,0.000000,100.00,0.00,44.833,1333.000000,0.000000,0.00,6.133,11.896,token,token,0.000000,1345.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_token,1,2,attack,30,6470.000000,3060.000000,3410.000000,47.30,52.70,215.667,6470.000000,0.000000,0.00,4.846,12.353,token,token,0.000000,6470.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_token,1,3,recovery,30,1164.000000,1164.000000,0.000000,100.00,0.00,38.800,1164.000000,0.000000,0.00,2.646,3.466,token,token,0.000000,1164.000000,0.000000,0.00,100.00,0.00
+phase_ddos_recovery,static_sliding,1,1,normal,30,1281.000000,1281.000000,0.000000,100.00,0.00,42.700,1269.000000,0.000000,0.00,2.854,5.869,sliding,sliding,0.000000,0.000000,1281.000000,0.00,0.00,100.00
+phase_ddos_recovery,static_sliding,1,2,attack,30,6396.000000,631.000000,5765.000000,9.87,90.13,213.200,6396.000000,0.000000,0.00,1.723,4.546,sliding,sliding,0.000000,0.000000,6396.000000,0.00,0.00,100.00
+phase_ddos_recovery,static_sliding,1,3,recovery,30,1188.000000,940.000000,248.000000,79.12,20.88,39.600,1188.000000,0.000000,0.00,2.385,2.979,sliding,sliding,0.000000,0.000000,1188.000000,0.00,0.00,100.00
+phase_ddos_recovery,adaptive,1,1,normal,30,1221.000000,923.000000,298.000000,75.59,24.41,40.700,1209.000000,0.000000,0.00,4.852,9.142,token,sliding,0.000000,792.000000,429.000000,0.00,64.86,35.14
+phase_ddos_recovery,adaptive,1,2,attack,30,6964.000000,0.000000,6964.000000,0.00,100.00,232.133,6964.000000,0.000000,0.00,2.879,5.752,sliding,sliding,0.000000,0.000000,6964.000000,0.00,0.00,100.00
+phase_ddos_recovery,adaptive,1,3,recovery,30,1196.000000,0.000000,1196.000000,0.00,100.00,39.867,1196.000000,0.000000,0.00,1.323,1.394,sliding,sliding,0.000000,0.000000,1196.000000,0.00,0.00,100.00

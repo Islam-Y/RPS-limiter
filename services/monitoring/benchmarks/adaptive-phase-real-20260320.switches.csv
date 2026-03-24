@@ -1,0 +1,3 @@
+scenario,mode,repeat,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+phase_burst_recovery,static_token,1,0,90,0,0,0,0:token
+phase_burst_recovery,static_token,2,0,90,0,0,0,0:token

@@ -64,6 +64,8 @@ ALLOW_ALGO_SWITCH = os.getenv("ALLOW_ALGO_SWITCH", "false").lower() == "true"
 MIN_ALGO_SWITCH_INTERVAL_SECONDS = int(
     os.getenv("MIN_ALGO_SWITCH_INTERVAL_SECONDS", "300")
 )
+ATTACK_STREAK_REQUIRED = int(os.getenv("ATTACK_STREAK_REQUIRED", "2"))
+RECOVERY_STREAK_REQUIRED = int(os.getenv("RECOVERY_STREAK_REQUIRED", "3"))
 BURSTINESS_THRESHOLD = float(os.getenv("BURSTINESS_THRESHOLD", "1.5"))
 BURSTINESS_POINTS = int(os.getenv("BURSTINESS_POINTS", "10"))
 TOKEN_MIN_HOLD_SECONDS = int(os.getenv("TOKEN_MIN_HOLD_SECONDS", "60"))
@@ -213,8 +215,14 @@ class Forecaster:
             return None
         if PROPHET_AVAILABLE and len(points) >= self._min_points:
             try:
+                ds = [
+                    point.ts.astimezone(timezone.utc).replace(tzinfo=None)
+                    if point.ts.tzinfo is not None
+                    else point.ts
+                    for point in points
+                ]
                 frame = pd.DataFrame(
-                    {"ds": [point.ts for point in points], "y": [point.rps for point in points]}
+                    {"ds": ds, "y": [point.rps for point in points]}
                 )
                 model = Prophet(
                     daily_seasonality=False,
@@ -223,7 +231,16 @@ class Forecaster:
                 )
                 model.fit(frame)
                 future = pd.DataFrame(
-                    {"ds": [points[-1].ts + timedelta(seconds=self._horizon_seconds)]}
+                    {
+                        "ds": [
+                            (
+                                points[-1].ts.astimezone(timezone.utc).replace(tzinfo=None)
+                                if points[-1].ts.tzinfo is not None
+                                else points[-1].ts
+                            )
+                            + timedelta(seconds=self._horizon_seconds)
+                        ]
+                    }
                 )
                 forecast = model.predict(future)
                 predicted = float(forecast["yhat"].iloc[-1])
@@ -241,6 +258,8 @@ class RecommendationState:
     last_good_config: Optional[LimitConfigIn] = None
     last_predicted_rps: Optional[float] = None
     token_non_burst_streak: int = 0
+    attack_streak: int = 0
+    recovery_streak: int = 0
 
 
 def parse_timestamp(value: Optional[Union[str, float, int]]) -> datetime:
@@ -272,15 +291,7 @@ def fallback_forecast(points: List[TimePoint], horizon_seconds: int) -> float:
     if not points:
         return 0.0
     window = points[-max(1, min(len(points), FALLBACK_WINDOW_POINTS)) :]
-    if len(window) == 1:
-        return window[-1].rps
-    start = window[0]
-    end = window[-1]
-    total_seconds = (end.ts - start.ts).total_seconds()
-    if total_seconds <= 0:
-        return end.rps
-    slope = (end.rps - start.rps) / total_seconds
-    return max(0.0, end.rps + slope * horizon_seconds)
+    return max(0.0, sum(point.rps for point in window) / len(window))
 
 
 def clamp(value: float, minimum: float, maximum: Optional[float]) -> float:
@@ -541,48 +552,59 @@ def recommend_config(
     if request.errors5xx is not None and request.errors5xx >= ERRORS_5XX_THRESHOLD:
         overload = True
 
-    spike = predicted_rps >= current_limit * DDOS_MULTIPLIER
+    observed_spike = request.observedRps >= current_limit * DDOS_MULTIPLIER
+    predicted_spike = predicted_rps >= current_limit * DDOS_MULTIPLIER
     target_rps = current_limit
 
-    if overload or spike:
+    if overload or predicted_spike:
         target_rps = current_limit * DECREASE_FACTOR
     elif predicted_rps > current_limit * (1 + INCREASE_THRESHOLD):
         target_rps = predicted_rps * (1 + INCREASE_HEADROOM)
-    elif predicted_rps < current_limit * (1 - DECREASE_THRESHOLD):
-        target_rps = predicted_rps
 
     target_rps = clamp(target_rps, MIN_RPS, max_rps)
     if not math.isfinite(target_rps):
         target_rps = current_limit
 
     bursty = is_bursty(history_points)
-    if bursty:
+    attack_signal = overload or observed_spike
+    if attack_signal:
+        state.attack_streak += 1
+        state.recovery_streak = 0
         state.token_non_burst_streak = 0
-    elif current_config.algorithm == "token":
-        state.token_non_burst_streak += 1
     else:
-        state.token_non_burst_streak = 0
+        state.attack_streak = 0
+        state.recovery_streak += 1
+        anomalous_recovery = observed_spike or (bursty and overload)
+        if not anomalous_recovery:
+            state.token_non_burst_streak += 1
+        else:
+            state.token_non_burst_streak = 0
 
     desired_algorithm = current_config.algorithm
     algo_switch_allowed = ALLOW_ALGO_SWITCH and (
         state.last_algo_switch_at is None
         or (now - state.last_algo_switch_at).total_seconds() >= MIN_ALGO_SWITCH_INTERVAL_SECONDS
     )
-    if algo_switch_allowed:
-        if bursty:
+    token_hold_active = (
+        current_config.algorithm == "token"
+        and state.last_algo_switch_at is not None
+        and (now - state.last_algo_switch_at).total_seconds() < TOKEN_MIN_HOLD_SECONDS
+    )
+    enough_recovery_samples = (
+        state.recovery_streak >= max(1, RECOVERY_STREAK_REQUIRED)
+        and state.token_non_burst_streak >= max(1, TOKEN_EXIT_NON_BURST_STREAK)
+    )
+
+    if current_config.algorithm not in ("token", "sliding"):
+        desired_algorithm = "sliding" if state.attack_streak >= max(1, ATTACK_STREAK_REQUIRED) else "token"
+    elif current_config.algorithm == "token":
+        desired_algorithm = "token"
+        if state.attack_streak >= max(1, ATTACK_STREAK_REQUIRED) and algo_switch_allowed and not token_hold_active:
+            desired_algorithm = "sliding"
+    elif current_config.algorithm == "sliding":
+        desired_algorithm = "sliding"
+        if enough_recovery_samples and algo_switch_allowed:
             desired_algorithm = "token"
-        elif current_config.algorithm == "token":
-            token_hold_active = (
-                state.last_algo_switch_at is not None
-                and (now - state.last_algo_switch_at).total_seconds() < TOKEN_MIN_HOLD_SECONDS
-            )
-            enough_non_bursty_samples = (
-                state.token_non_burst_streak >= TOKEN_EXIT_NON_BURST_STREAK
-            )
-            if token_hold_active or not enough_non_bursty_samples:
-                desired_algorithm = "token"
-            else:
-                desired_algorithm = "sliding"
 
     recommendation = build_response(
         desired_algorithm, target_rps, current_config, round(predicted_rps, 3)
@@ -606,7 +628,7 @@ def recommend_config(
             current_config,
             round(predicted_rps, 3),
         )
-    if recent_change_block:
+    if recent_change_block and desired_algorithm == current_config.algorithm:
         return build_response(
             current_config.algorithm,
             current_limit,
@@ -617,8 +639,12 @@ def recommend_config(
     state.last_change_at = now
     if desired_algorithm != current_config.algorithm:
         state.last_algo_switch_at = now
-        if desired_algorithm != "token":
+        if desired_algorithm == "token":
+            state.attack_streak = 0
+            state.recovery_streak = 0
             state.token_non_burst_streak = 0
+        else:
+            state.recovery_streak = 0
     return recommendation
 
 

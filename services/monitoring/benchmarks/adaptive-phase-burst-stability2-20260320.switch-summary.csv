@@ -1,0 +1,4 @@
+scenario,mode,runs,mean_switch_count,ci95_switch_count,mean_token_seconds,mean_sliding_seconds,mean_fixed_seconds,mean_unknown_seconds
+phase_burst_recovery,static_token,3,0.00,0.00,90.000,0.000,0.000,0.000
+phase_burst_recovery,adaptive,3,2.00,0.00,47.667,38.000,0.000,0.000
+phase_burst_recovery,static_sliding,3,0.00,0.00,0.000,90.000,0.000,0.000

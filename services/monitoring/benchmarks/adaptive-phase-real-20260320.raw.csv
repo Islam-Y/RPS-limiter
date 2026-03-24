@@ -1,0 +1,7 @@
+scenario,mode,repeat,phase_order,phase_name,phase_duration_s,total_requests,forwarded,rejected,success_percent,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_proxy_latency_ms,p95_proxy_latency_ms,start_algorithm,end_algorithm,fixed_requests,token_requests,sliding_requests,fixed_share_percent,token_share_percent,sliding_share_percent
+phase_burst_recovery,static_token,1,1,normal,30,1284.000000,1284.000000,0.000000,100.00,0.00,42.800,1300.000000,0.000000,0.00,16.772,26.595,token,token,0.000000,1284.000000,0.000000,0.00,100.00,0.00
+phase_burst_recovery,static_token,1,2,attack,30,3556.000000,2711.000000,845.000000,76.24,23.76,118.533,3532.000000,0.000000,0.00,4.867,10.986,token,token,0.000000,3556.000000,0.000000,0.00,100.00,0.00
+phase_burst_recovery,static_token,1,3,recovery,30,1160.000000,1160.000000,0.000000,100.00,0.00,38.667,1156.000000,0.000000,0.00,2.928,4.652,token,token,0.000000,1160.000000,0.000000,0.00,100.00,0.00
+phase_burst_recovery,static_token,2,1,normal,30,1368.000000,1368.000000,0.000000,100.00,0.00,45.600,1384.000000,0.000000,0.00,4.022,7.526,token,token,0.000000,1368.000000,0.000000,0.00,100.00,0.00
+phase_burst_recovery,static_token,2,2,attack,30,3452.000000,2625.000000,827.000000,76.04,23.96,115.067,3424.000000,0.000000,0.00,4.153,10.450,token,token,0.000000,3452.000000,0.000000,0.00,100.00,0.00
+phase_burst_recovery,static_token,2,3,recovery,30,200.000000,200.000000,0.000000,100.00,0.00,6.667,200.000000,0.000000,0.00,2.507,3.626,token,token,0.000000,200.000000,0.000000,0.00,100.00,0.00

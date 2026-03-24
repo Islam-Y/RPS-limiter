@@ -1,0 +1,4 @@
+scenario,mode,runs,mean_switch_count,ci95_switch_count,mean_token_seconds,mean_sliding_seconds,mean_fixed_seconds,mean_unknown_seconds
+phase_ddos_recovery,static_token,1,0.00,0.00,90.000,0.000,0.000,0.000
+phase_ddos_recovery,adaptive,1,1.00,0.00,19.000,66.000,0.000,0.000
+phase_ddos_recovery,static_sliding,1,0.00,0.00,0.000,90.000,0.000,0.000

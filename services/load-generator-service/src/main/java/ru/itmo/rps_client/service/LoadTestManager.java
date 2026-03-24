@@ -16,8 +16,8 @@ import ru.itmo.rps_client.http.RequestSender;
 import ru.itmo.rps_client.http.RequestSenderFactory;
 import ru.itmo.rps_client.metrics.LoadMetrics;
 import ru.itmo.rps_client.profile.LoadProfile;
-import ru.itmo.rps_client.scheduler.IntervalScheduler;
 import ru.itmo.rps_client.scheduler.LoadScheduler;
+import ru.itmo.rps_client.scheduler.TickScheduler;
 
 @Service
 @RequiredArgsConstructor
@@ -80,6 +80,6 @@ public class LoadTestManager {
     }
 
     private LoadScheduler createScheduler(LoadProfile profile, Duration duration, RequestSender sender) {
-        return new IntervalScheduler(duration, properties.getTick(), profile, sender);
+        return new TickScheduler(duration, properties.getTick(), profile, sender);
     }
 }

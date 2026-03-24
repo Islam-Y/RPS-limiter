@@ -89,6 +89,7 @@ public class TickScheduler implements LoadScheduler {
             return;
         }
         running.set(false);
+        sender.stop();
         if (future != null) {
             future.cancel(false);
         }

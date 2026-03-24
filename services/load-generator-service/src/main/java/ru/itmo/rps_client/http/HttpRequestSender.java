@@ -6,8 +6,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.itmo.rps_client.metrics.LoadMetrics;
@@ -22,6 +24,7 @@ public class HttpRequestSender implements RequestSender {
     private final Duration slowThreshold;
     private final Semaphore semaphore;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private final ConcurrentMap<CompletableFuture<HttpResponse<Void>>, Boolean> inFlight = new ConcurrentHashMap<>();
 
     public HttpRequestSender(HttpClient httpClient,
                              URI target,
@@ -45,6 +48,13 @@ public class HttpRequestSender implements RequestSender {
         if (stopped.get()) {
             return;
         }
+        Thread.startVirtualThread(this::dispatchRequest);
+    }
+
+    private void dispatchRequest() {
+        if (stopped.get()) {
+            return;
+        }
         try {
             if (semaphore != null) {
                 semaphore.acquire();
@@ -53,13 +63,21 @@ public class HttpRequestSender implements RequestSender {
             Thread.currentThread().interrupt();
             return;
         }
+        if (stopped.get()) {
+            if (semaphore != null) {
+                semaphore.release();
+            }
+            return;
+        }
         long runId = metrics.currentRunId();
         metrics.recordRequestStart(runId);
         long startNanos = System.nanoTime();
         try {
             CompletableFuture<HttpResponse<Void>> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding());
+            inFlight.put(future, Boolean.TRUE);
             future.whenComplete((response, throwable) -> {
                 try {
+                    inFlight.remove(future);
                     Duration duration = Duration.ofNanos(System.nanoTime() - startNanos);
                     if (throwable != null || response == null) {
                         logRequestError(response, throwable, duration);
@@ -95,6 +113,7 @@ public class HttpRequestSender implements RequestSender {
 
     public void stop() {
         stopped.set(true);
+        inFlight.keySet().forEach(future -> future.cancel(true));
     }
 
     private void logRequestError(HttpResponse<Void> response, Throwable throwable, Duration duration) {

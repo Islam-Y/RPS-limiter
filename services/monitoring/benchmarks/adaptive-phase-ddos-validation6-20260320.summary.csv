@@ -1,0 +1,10 @@
+scenario,mode,phase_order,phase_name,runs,mean_success_percent,ci95_success_percent,mean_reject_percent,ci95_reject_percent,mean_effective_rps,ci95_effective_rps,mean_error_percent,ci95_error_percent,mean_avg_latency_ms,ci95_avg_latency_ms,mean_p95_latency_ms,ci95_p95_latency_ms,mean_token_share_percent,mean_sliding_share_percent,mean_fixed_share_percent,dominant_algorithm
+phase_ddos_recovery,static_token,1,normal,1,100.00,0.00,0.00,0.00,40.800,0.000,0.00,0.00,6.502,0.000,11.045,0.000,100.00,0.00,0.00,token
+phase_ddos_recovery,adaptive,1,normal,1,100.00,0.00,0.00,0.00,40.567,0.000,0.00,0.00,5.842,0.000,9.094,0.000,100.00,0.00,0.00,token
+phase_ddos_recovery,static_sliding,1,normal,1,100.00,0.00,0.00,0.00,47.933,0.000,0.00,0.00,8.101,0.000,18.747,0.000,0.00,100.00,0.00,sliding
+phase_ddos_recovery,static_token,2,attack,1,48.81,0.00,51.19,0.00,216.433,0.000,0.00,0.00,11.038,0.000,26.246,0.000,100.00,0.00,0.00,token
+phase_ddos_recovery,adaptive,2,attack,1,30.55,0.00,69.45,0.00,206.633,0.000,0.00,0.00,22.140,0.000,115.096,0.000,31.46,68.54,0.00,sliding
+phase_ddos_recovery,static_sliding,2,attack,1,7.70,0.00,92.30,0.00,214.200,0.000,0.00,0.00,1.821,0.000,4.957,0.000,0.00,100.00,0.00,sliding
+phase_ddos_recovery,static_token,3,recovery,1,100.00,0.00,0.00,0.00,39.200,0.000,0.00,0.00,2.593,0.000,3.500,0.000,100.00,0.00,0.00,token
+phase_ddos_recovery,adaptive,3,recovery,1,69.76,0.00,30.24,0.00,38.800,0.000,0.00,0.00,2.455,0.000,4.779,0.000,0.00,100.00,0.00,sliding
+phase_ddos_recovery,static_sliding,3,recovery,1,72.35,0.00,27.65,0.00,39.067,0.000,0.00,0.00,2.264,0.000,4.460,0.000,0.00,100.00,0.00,sliding
