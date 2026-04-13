@@ -79,17 +79,27 @@
 {
   "timestamp": "2026-02-04T18:00:00Z",
   "observedRps": 120.5,
+  "allowedRps": 110.0,
+  "rejectedRps": 10.5,
   "rejectedRate": 0.12,
+  "peakRps1s": 180.0,
+  "burstRatio": 1.49,
+  "coefficientOfVariation": 0.31,
   "latencyP95": 0.45,
   "errors5xx": 2,
+  "applyRecommendations": false,
   "currentConfig": {
-    "algorithm": "fixed",
+    "algorithm": "sliding",
     "limit": 100,
     "window": 60
   }
 }
 ```
 - `timestamp`: рекомендуется ISO‑8601 (`2026-02-04T18:00:00Z`) или Unix epoch в секундах.
+- `allowedRps`, `rejectedRps`, `peakRps1s`, `burstRatio`, `coefficientOfVariation` — опциональная расширенная телеметрия для selector-а; при отсутствии AI использует fallback-оценки.
+- `applyRecommendations`:
+  - `false` — shadow mode, AI не должен вести внутреннее состояние так, как будто switch уже применен;
+  - `true` — production apply mode, cooldown и switch-state учитываются как реальные.
 
 #### Формат ответа AI‑module
 ```json
@@ -110,6 +120,7 @@
 ## 6. Адаптивный режим
 - Service C периодически отправляет телеметрию в AI‑module.
 - AI‑module прогнозирует нагрузку и рекомендует изменения.
+- Возможен **shadow mode**: рекомендации считаются и публикуются в метриках, но не применяются автоматически.
 - При недоступности AI Service C продолжает с последними лимитами.
 - Ограничения на частоту изменений: минимальный интервал и порог изменения.
 
@@ -125,7 +136,7 @@
   `ratelimiter.capacity`, `ratelimiter.fill-rate`, `ratelimiter.fail-open`.
 - `ratelimiter.redis-health-interval`, `ratelimiter.config-refresh-interval`.
 - `ratelimiter.bounds.*` (ограничения значений).
-- `ratelimiter.adaptive.*` (URL, interval, timeout, enabled).
+- `ratelimiter.adaptive.*` (URL, interval, timeout, enabled, apply-recommendations).
 
 ### AI‑module (ENV)
 - `HISTORY_WINDOW_SECONDS`, `MAX_HISTORY_POINTS`, `MIN_HISTORY_POINTS`, `FORECAST_SECONDS`.
@@ -134,6 +145,17 @@
 - `ALLOW_ALGO_SWITCH`, `MIN_ALGO_SWITCH_INTERVAL_SECONDS`.
 - `BURSTINESS_THRESHOLD`, `BURSTINESS_POINTS`.
 - `TOKEN_MIN_HOLD_SECONDS`, `TOKEN_EXIT_NON_BURST_STREAK`, `MIN_TOKEN_FILL_RATE`.
+- `TOKEN_OVERLOAD_GAIN`, `TOKEN_SMOOTH_CAPACITY_SECONDS`.
+- `MAX_STEP_UP_FACTOR`, `MAX_STEP_DOWN_FACTOR`.
+- `ALGORITHM_SCORE_MARGIN`, `ALGORITHM_SCORE_MARGIN_OVERLOAD`.
+- `SELECTOR_STREAK_REQUIRED`, `FIXED_ESCAPE_STREAK_REQUIRED`, `MIN_SWITCH_TRAFFIC_RPS`.
+- `RECOMMENDABLE_ALGORITHMS`:
+  - production-safe профиль: `sliding,token`
+  - `fixed` можно оставить только для ручных тестов и benchmark-сравнения
+- Текущий latency-aware production profile в `docker-compose.yml`:
+  - `TOKEN_OVERLOAD_GAIN=0.30`
+  - `TOKEN_SMOOTH_CAPACITY_SECONDS=1.2`
+  - `LATENCY_P95_THRESHOLD=0.06`
 
 ## 8. Метрики
 ### Service A
@@ -152,15 +174,23 @@
 - `ratelimiter_redis_errors_total`
 - `ratelimiter_current_limit`, `ratelimiter_window_seconds`, `ratelimiter_bucket_capacity`, `ratelimiter_token_fill_rate`
 - `ratelimiter_redis_connected`, `ratelimiter_mode{type="failopen"}`
+- `ratelimiter_adaptive_apply_enabled`
+- `ratelimiter_adaptive_recommendations_total{mode="applied|shadow"}`
+- `ratelimiter_adaptive_recommendations_by_algorithm_total{algorithm="fixed|sliding|token",mode="applied|shadow"}`
+- `ratelimiter_adaptive_recommended_algorithm{algorithm="fixed|sliding|token"}`
+- `ratelimiter_adaptive_recommended_limit`, `ratelimiter_adaptive_recommended_window_seconds`
+- `ratelimiter_adaptive_recommended_capacity`, `ratelimiter_adaptive_recommended_fill_rate`
 
 ### AI‑module
 - `ai_limit_config_requests_total{result="ok|invalid_config|validation_error"}`
 - `ai_forecast_duration_seconds`
 - `ai_last_observed_rps`, `ai_last_predicted_rps`, `ai_last_recommended_rps`
+- `ai_last_allowed_rps`, `ai_last_rejected_rps`
+- `ai_last_peak_rps_1s`, `ai_last_burst_ratio`, `ai_last_coefficient_of_variation`
 - `ai_last_recommended_limit`, `ai_last_recommended_window_seconds`
 - `ai_last_recommended_capacity`, `ai_last_recommended_fill_rate`
 - `ai_last_valid_for_seconds`, `ai_last_algorithm{algorithm="fixed|sliding|token"}`
-- `ai_history_points`
+- `ai_history_points`, `ai_algorithm_score{algorithm="fixed|sliding|token"}`
 
 ## 9. Отказоустойчивость
 - При недоступности Redis Service C может работать в режиме fail‑open.

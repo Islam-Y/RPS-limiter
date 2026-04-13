@@ -90,6 +90,18 @@ histogram_quantile(
 ```promql
 rate(ai_limit_config_requests_total{job="ai-module"}[1m])
 ```
+Selector score по алгоритмам:
+```promql
+ai_algorithm_score{job="ai-module"}
+```
+Burst ratio:
+```promql
+ai_last_burst_ratio{job="ai-module"}
+```
+Peak 1s RPS:
+```promql
+ai_last_peak_rps_1s{job="ai-module"}
+```
 Рекомендованный лимит:
 ```promql
 ai_last_recommended_limit{job="ai-module"}
@@ -97,6 +109,32 @@ ai_last_recommended_limit{job="ai-module"}
 Предсказанный RPS:
 ```promql
 ai_last_predicted_rps{job="ai-module"}
+```
+
+## 8.1 Панели для adaptive shadow mode
+Включён ли auto-apply:
+```promql
+ratelimiter_adaptive_apply_enabled{job="service-c"}
+```
+Количество shadow/applied рекомендаций:
+```promql
+rate(ratelimiter_adaptive_recommendations_total{job="service-c"}[5m])
+```
+Распределение рекомендаций по алгоритмам в shadow mode:
+```promql
+sum by (algorithm) (increase(ratelimiter_adaptive_recommendations_by_algorithm_total{job="service-c",mode="shadow"}[15m]))
+```
+Последняя рекомендация adaptive:
+```promql
+ratelimiter_adaptive_recommended_algorithm{job="service-c"}
+```
+Какой лимит рекомендует adaptive:
+```promql
+ratelimiter_adaptive_recommended_limit{job="service-c"}
+```
+Какой fill rate рекомендует adaptive:
+```promql
+ratelimiter_adaptive_recommended_fill_rate{job="service-c"}
 ```
 
 ## 9. Как называть и сохранять
@@ -123,6 +161,7 @@ ai_last_predicted_rps{job="ai-module"}
 5) Loadgen current RPS  
 6) Loadgen errors  
 7) AI predicted RPS  
+8) Adaptive shadow/applied recommendations
 
 Пример Redis availability:
 ```promql

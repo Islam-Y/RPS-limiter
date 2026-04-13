@@ -67,9 +67,15 @@ public class AdaptiveConfigScheduler {
 		AdaptiveConfigRequest request = new AdaptiveConfigRequest();
 		request.setTimestamp(Instant.now().getEpochSecond());
 		request.setObservedRps(snapshot.observedRps());
+		request.setAllowedRps(snapshot.allowedRps());
+		request.setRejectedRps(snapshot.rejectedRps());
 		request.setRejectedRate(snapshot.rejectedRate());
+		request.setPeakRps1s(snapshot.peakRps1s());
+		request.setBurstRatio(snapshot.burstRatio());
+		request.setCoefficientOfVariation(snapshot.coefficientOfVariation());
 		request.setErrors5xx(snapshot.errors5xx());
 		request.setLatencyP95(metrics.getRequestLatencyP95());
+		request.setApplyRecommendations(properties.getAdaptive().isApplyRecommendations());
 
 		RateLimiterConfigPayload currentConfig = new RateLimiterConfigPayload();
 		currentConfig.setAlgorithm(config.getAlgorithm());
@@ -86,6 +92,20 @@ public class AdaptiveConfigScheduler {
 				restTemplate.postForObject(url, request, RateLimiterConfigPayload.class);
 			if (response == null) {
 				log.warn("AI module returned empty response");
+				return;
+			}
+			boolean applyRecommendations = properties.getAdaptive().isApplyRecommendations();
+			metrics.recordAdaptiveRecommendation(response, applyRecommendations);
+			if (!applyRecommendations) {
+				log.info(
+					"Adaptive recommendation kept in shadow mode: currentAlgo={}, recommendedAlgo={}, observedRps={}, peakRps1s={}, rejectedRate={}, burstRatio={}, cv={}",
+					config.getAlgorithm(),
+					response.getAlgorithm(),
+					snapshot.observedRps(),
+					snapshot.peakRps1s(),
+					snapshot.rejectedRate(),
+					snapshot.burstRatio(),
+					snapshot.coefficientOfVariation());
 				return;
 			}
 			configService.applyConfig(response, "adaptive", true);

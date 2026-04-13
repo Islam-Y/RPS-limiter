@@ -12,7 +12,7 @@ server:
 
 ratelimiter:
   target-url: ${TARGET_URL:http://localhost:8081}
-  algorithm: ${RATE_LIMIT_ALGORITHM:fixed}
+  algorithm: ${RATE_LIMIT_ALGORITHM:sliding}
   limit: ${RATE_LIMIT_LIMIT:100}
   window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}
   capacity: ${RATE_LIMIT_CAPACITY:200}
@@ -27,6 +27,7 @@ ratelimiter:
     max-fill-rate: 1000000
   adaptive:
     enabled: ${ADAPTIVE_ENABLED:false}
+    apply-recommendations: ${ADAPTIVE_APPLY_RECOMMENDATIONS:true}
     url: ${ADAPTIVE_URL:}
     interval: ${ADAPTIVE_INTERVAL:30s}
     timeout: ${ADAPTIVE_TIMEOUT:5s}

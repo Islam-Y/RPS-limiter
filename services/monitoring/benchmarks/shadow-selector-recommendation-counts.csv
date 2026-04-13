@@ -1,0 +1,7 @@
+scenario,fixed_count,sliding_count,token_count,shadow_winner
+constant_low,3,0,0,fixed
+sinusoidal,2,1,0,fixed
+poisson,3,0,0,fixed
+constant_high,2,1,0,fixed
+burst,2,0,1,fixed
+ddos,2,1,0,fixed

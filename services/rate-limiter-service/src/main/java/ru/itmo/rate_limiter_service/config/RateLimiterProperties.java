@@ -42,6 +42,7 @@ public class RateLimiterProperties {
 	@Setter
 	public static class AdaptiveProperties {
 		private boolean enabled = false;
+		private boolean applyRecommendations = true;
 		private String url;
 		private Duration interval = Duration.ofSeconds(30);
 		private Duration timeout = Duration.ofSeconds(5);

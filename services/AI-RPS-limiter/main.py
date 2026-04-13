@@ -8,7 +8,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Deque, List, Optional, Union
+from typing import Deque, Dict, List, Optional, Union
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +35,28 @@ except Exception:
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(message)s")
 
+SUPPORTED_ALGORITHMS = ("fixed", "sliding", "token")
+ALLOWED_ALGORITHMS = set(SUPPORTED_ALGORITHMS)
+
+
+def parse_algorithm_list(raw_value: str) -> tuple[str, ...]:
+    values: List[str] = []
+    for raw_part in raw_value.split(","):
+        algorithm = raw_part.strip().lower()
+        if not algorithm:
+            continue
+        if algorithm not in ALLOWED_ALGORITHMS:
+            raise RuntimeError(
+                f"Unsupported algorithm in RECOMMENDABLE_ALGORITHMS: {algorithm}"
+            )
+        if algorithm not in values:
+            values.append(algorithm)
+    if not values:
+        raise RuntimeError(
+            "RECOMMENDABLE_ALGORITHMS must contain at least one supported algorithm"
+        )
+    return tuple(values)
+
 HISTORY_WINDOW_SECONDS = int(os.getenv("HISTORY_WINDOW_SECONDS", "3600"))
 MAX_HISTORY_POINTS = int(os.getenv("MAX_HISTORY_POINTS", "5000"))
 MIN_HISTORY_POINTS = int(os.getenv("MIN_HISTORY_POINTS", "10"))
@@ -47,6 +69,9 @@ INCREASE_THRESHOLD = float(os.getenv("INCREASE_THRESHOLD", "0.1"))
 DECREASE_THRESHOLD = float(os.getenv("DECREASE_THRESHOLD", "0.2"))
 INCREASE_HEADROOM = float(os.getenv("INCREASE_HEADROOM", "0.05"))
 DECREASE_FACTOR = float(os.getenv("DECREASE_FACTOR", "0.7"))
+MAX_STEP_UP_FACTOR = float(os.getenv("MAX_STEP_UP_FACTOR", "1.15"))
+MAX_STEP_DOWN_FACTOR = float(os.getenv("MAX_STEP_DOWN_FACTOR", "0.85"))
+TOKEN_OVERLOAD_GAIN = float(os.getenv("TOKEN_OVERLOAD_GAIN", "0.35"))
 
 MIN_RPS = float(os.getenv("MIN_RPS", "1"))
 MAX_RPS = float(os.getenv("MAX_RPS", "10000"))
@@ -71,8 +96,34 @@ BURSTINESS_POINTS = int(os.getenv("BURSTINESS_POINTS", "10"))
 TOKEN_MIN_HOLD_SECONDS = int(os.getenv("TOKEN_MIN_HOLD_SECONDS", "60"))
 TOKEN_EXIT_NON_BURST_STREAK = int(os.getenv("TOKEN_EXIT_NON_BURST_STREAK", "3"))
 MIN_TOKEN_FILL_RATE = float(os.getenv("MIN_TOKEN_FILL_RATE", "5"))
-
-ALLOWED_ALGORITHMS = {"fixed", "sliding", "token"}
+TOKEN_SMOOTH_CAPACITY_SECONDS = float(
+    os.getenv("TOKEN_SMOOTH_CAPACITY_SECONDS", "1.5")
+)
+RECOVERY_HEADROOM = 1.1
+TOKEN_EXIT_UTILIZATION_MAX = 0.95
+TOKEN_EXTREME_OVERLOAD_REJECT_RATE = float(
+    os.getenv("TOKEN_EXTREME_OVERLOAD_REJECT_RATE", "0.9")
+)
+TOKEN_EXTREME_OVERLOAD_RATIO = float(
+    os.getenv("TOKEN_EXTREME_OVERLOAD_RATIO", "2.0")
+)
+TOKEN_EXTREME_OVERLOAD_PEAK_RATIO = float(
+    os.getenv("TOKEN_EXTREME_OVERLOAD_PEAK_RATIO", "2.5")
+)
+SLIDING_STARVATION_RATIO = float(os.getenv("SLIDING_STARVATION_RATIO", "4.0"))
+SLIDING_STARVATION_REJECT_RATE = float(
+    os.getenv("SLIDING_STARVATION_REJECT_RATE", "0.95")
+)
+ALGORITHM_SCORE_MARGIN = float(os.getenv("ALGORITHM_SCORE_MARGIN", "12"))
+ALGORITHM_SCORE_MARGIN_OVERLOAD = float(
+    os.getenv("ALGORITHM_SCORE_MARGIN_OVERLOAD", "5")
+)
+SELECTOR_STREAK_REQUIRED = int(os.getenv("SELECTOR_STREAK_REQUIRED", "2"))
+FIXED_ESCAPE_STREAK_REQUIRED = int(os.getenv("FIXED_ESCAPE_STREAK_REQUIRED", "2"))
+MIN_SWITCH_TRAFFIC_RPS = float(os.getenv("MIN_SWITCH_TRAFFIC_RPS", "10"))
+RECOMMENDABLE_ALGORITHMS = parse_algorithm_list(
+    os.getenv("RECOMMENDABLE_ALGORITHMS", ",".join(SUPPORTED_ALGORITHMS))
+)
 
 REQUESTS_TOTAL = Counter(
     "ai_limit_config_requests_total",
@@ -86,6 +137,26 @@ FORECAST_DURATION_SECONDS = Histogram(
 LAST_OBSERVED_RPS = Gauge(
     "ai_last_observed_rps",
     "Last observed RPS from input",
+)
+LAST_ALLOWED_RPS = Gauge(
+    "ai_last_allowed_rps",
+    "Last forwarded RPS from input",
+)
+LAST_REJECTED_RPS = Gauge(
+    "ai_last_rejected_rps",
+    "Last rejected RPS from input",
+)
+LAST_PEAK_RPS_1S = Gauge(
+    "ai_last_peak_rps_1s",
+    "Peak one-second RPS from input",
+)
+LAST_BURST_RATIO = Gauge(
+    "ai_last_burst_ratio",
+    "Last burst ratio from input",
+)
+LAST_COEFFICIENT_OF_VARIATION = Gauge(
+    "ai_last_coefficient_of_variation",
+    "Last per-second coefficient of variation from input",
 )
 LAST_PREDICTED_RPS = Gauge(
     "ai_last_predicted_rps",
@@ -124,6 +195,11 @@ HISTORY_POINTS = Gauge(
     "ai_history_points",
     "Number of points in history window",
 )
+ALGORITHM_SCORE = Gauge(
+    "ai_algorithm_score",
+    "Current selector score per algorithm",
+    ["algorithm"],
+)
 
 
 class LimitConfigIn(BaseModel):
@@ -149,9 +225,15 @@ class LimitConfigIn(BaseModel):
 class LimitConfigRequest(BaseModel):
     timestamp: Optional[Union[str, float, int]] = None
     observedRps: float = Field(..., ge=0)
+    allowedRps: Optional[float] = Field(None, ge=0)
+    rejectedRps: Optional[float] = Field(None, ge=0)
     rejectedRate: Optional[float] = Field(None, ge=0, le=1)
+    peakRps1s: Optional[float] = Field(None, ge=0)
+    burstRatio: Optional[float] = Field(None, ge=0)
+    coefficientOfVariation: Optional[float] = Field(None, ge=0)
     latencyP95: Optional[float] = Field(None, ge=0)
     errors5xx: Optional[int] = Field(None, ge=0)
+    applyRecommendations: bool = False
     currentConfig: LimitConfigIn
 
     class Config:
@@ -256,7 +338,11 @@ class RecommendationState:
     last_algo_switch_at: Optional[datetime] = None
     last_good_recommendation: Optional[LimitConfigResponse] = None
     last_good_config: Optional[LimitConfigIn] = None
+    shadow_current_config: Optional[LimitConfigIn] = None
     last_predicted_rps: Optional[float] = None
+    last_selector_candidate: Optional[str] = None
+    selector_candidate_streak: int = 0
+    fixed_escape_streak: int = 0
     token_non_burst_streak: int = 0
     attack_streak: int = 0
     recovery_streak: int = 0
@@ -298,6 +384,26 @@ def clamp(value: float, minimum: float, maximum: Optional[float]) -> float:
     if maximum is None:
         return max(minimum, value)
     return max(minimum, min(value, maximum))
+
+
+def clamp01(value: float) -> float:
+    return clamp(value, 0.0, 1.0)
+
+
+def safe_ratio(numerator: float, denominator: float, default: float = 0.0) -> float:
+    if denominator <= 0:
+        return default
+    return numerator / denominator
+
+
+def coefficient_of_variation(values: List[float]) -> float:
+    if not values:
+        return 0.0
+    mean = sum(values) / len(values)
+    if mean <= 0:
+        return 0.0
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return math.sqrt(variance) / mean
 
 
 def validate_current_config(config: LimitConfigIn) -> Optional[str]:
@@ -376,7 +482,8 @@ def default_fallback_config() -> LimitConfigIn:
         if max_limit >= 1:
             limit = min(limit, max_limit)
         limit = max(1, limit)
-    return LimitConfigIn(algorithm="fixed", limit=limit, window=window)
+    fixed_window_algorithm = "fixed" if "fixed" in RECOMMENDABLE_ALGORITHMS else "sliding"
+    return LimitConfigIn(algorithm=fixed_window_algorithm, limit=limit, window=window)
 
 
 def recommendation_rps(recommendation: LimitConfigResponse) -> Optional[float]:
@@ -389,10 +496,26 @@ def recommendation_rps(recommendation: LimitConfigResponse) -> Optional[float]:
     return None
 
 
+def config_from_response(
+    recommendation: LimitConfigResponse, fallback: LimitConfigIn
+) -> LimitConfigIn:
+    if recommendation.algorithm in ("fixed", "sliding"):
+        return LimitConfigIn(
+            algorithm=recommendation.algorithm,
+            limit=int(recommendation.limit or fallback.limit or 1),
+            window=int(recommendation.window or fallback.window or DEFAULT_WINDOW_SECONDS),
+        )
+    return LimitConfigIn(
+        algorithm="token",
+        capacity=int(recommendation.capacity or fallback.capacity or 1),
+        fillRate=float(recommendation.fillRate or fallback.fillRate or MIN_RPS),
+    )
+
+
 def update_algorithm_gauge(algorithm: str) -> None:
     if algorithm not in ALLOWED_ALGORITHMS:
         return
-    for algo in ALLOWED_ALGORITHMS:
+    for algo in SUPPORTED_ALGORITHMS:
         LAST_ALGORITHM.labels(algorithm=algo).set(1.0 if algo == algorithm else 0.0)
 
 
@@ -402,9 +525,32 @@ def update_metrics(
     recommendation: LimitConfigResponse,
     history_len: int,
     result: str,
+    algorithm_scores: Optional[Dict[str, float]] = None,
 ) -> None:
     REQUESTS_TOTAL.labels(result=result).inc()
+    allowed_rps = (
+        float(request.allowedRps)
+        if request.allowedRps is not None
+        else max(0.0, float(request.observedRps) * (1.0 - float(request.rejectedRate or 0.0)))
+    )
+    rejected_rps = (
+        float(request.rejectedRps)
+        if request.rejectedRps is not None
+        else max(0.0, float(request.observedRps) - allowed_rps)
+    )
+    peak_rps_1s = float(request.peakRps1s if request.peakRps1s is not None else request.observedRps)
+    burst_ratio = (
+        float(request.burstRatio)
+        if request.burstRatio is not None
+        else safe_ratio(peak_rps_1s, float(request.observedRps), 0.0)
+    )
+    coeff = float(request.coefficientOfVariation or 0.0)
     LAST_OBSERVED_RPS.set(float(request.observedRps))
+    LAST_ALLOWED_RPS.set(allowed_rps)
+    LAST_REJECTED_RPS.set(rejected_rps)
+    LAST_PEAK_RPS_1S.set(peak_rps_1s)
+    LAST_BURST_RATIO.set(burst_ratio)
+    LAST_COEFFICIENT_OF_VARIATION.set(coeff)
     LAST_PREDICTED_RPS.set(float(predicted_rps))
     HISTORY_POINTS.set(float(history_len))
     LAST_VALID_FOR_SECONDS.set(float(recommendation.validFor or 0))
@@ -424,6 +570,11 @@ def update_metrics(
         LAST_RECOMMENDED_WINDOW_SECONDS.set(0.0)
         LAST_RECOMMENDED_CAPACITY.set(float(recommendation.capacity or 0))
         LAST_RECOMMENDED_FILL_RATE.set(float(recommendation.fillRate or 0))
+    if algorithm_scores is not None:
+        for algorithm in SUPPORTED_ALGORITHMS:
+            ALGORITHM_SCORE.labels(algorithm=algorithm).set(
+                float(algorithm_scores.get(algorithm, 0.0))
+            )
 
 
 def set_gauge_value(gauge, value: Optional[float]) -> None:
@@ -442,6 +593,11 @@ def update_metrics_from_response(
 ) -> None:
     REQUESTS_TOTAL.labels(result=result).inc()
     set_gauge_value(LAST_OBSERVED_RPS, observed_rps)
+    set_gauge_value(LAST_ALLOWED_RPS, None)
+    set_gauge_value(LAST_REJECTED_RPS, None)
+    set_gauge_value(LAST_PEAK_RPS_1S, None)
+    set_gauge_value(LAST_BURST_RATIO, None)
+    set_gauge_value(LAST_COEFFICIENT_OF_VARIATION, None)
     set_gauge_value(LAST_PREDICTED_RPS, predicted_rps)
     if history_len is None:
         set_gauge_value(HISTORY_POINTS, None)
@@ -463,6 +619,8 @@ def update_metrics_from_response(
         LAST_RECOMMENDED_WINDOW_SECONDS.set(0.0)
         LAST_RECOMMENDED_CAPACITY.set(float(recommendation.capacity or 0))
         LAST_RECOMMENDED_FILL_RATE.set(float(recommendation.fillRate or 0))
+    for algorithm in SUPPORTED_ALGORITHMS:
+        ALGORITHM_SCORE.labels(algorithm=algorithm).set(math.nan)
 
 
 def current_rps_limit(config: LimitConfigIn) -> float:
@@ -481,11 +639,362 @@ def is_bursty(points: List[TimePoint]) -> bool:
     return max(sample) / mean >= BURSTINESS_THRESHOLD
 
 
+def derive_input_telemetry(
+    request: LimitConfigRequest, predicted_rps: float, history_points: List[TimePoint], current_limit: float
+) -> Dict[str, float]:
+    observed_rps = float(request.observedRps)
+    rejected_rate = float(request.rejectedRate or 0.0)
+    allowed_rps = (
+        float(request.allowedRps)
+        if request.allowedRps is not None
+        else max(0.0, observed_rps * (1.0 - rejected_rate))
+    )
+    rejected_rps = (
+        float(request.rejectedRps)
+        if request.rejectedRps is not None
+        else max(0.0, observed_rps - allowed_rps)
+    )
+
+    if request.peakRps1s is not None:
+        peak_rps_1s = float(request.peakRps1s)
+    elif history_points:
+        peak_rps_1s = max(point.rps for point in history_points[-BURSTINESS_POINTS:])
+    else:
+        peak_rps_1s = observed_rps
+
+    if request.burstRatio is not None:
+        burst_ratio = float(request.burstRatio)
+    else:
+        burst_ratio = safe_ratio(peak_rps_1s, observed_rps, 0.0 if observed_rps <= 0 else 1.0)
+
+    if request.coefficientOfVariation is not None:
+        coeff = float(request.coefficientOfVariation)
+    else:
+        coeff = coefficient_of_variation(
+            [point.rps for point in history_points[-BURSTINESS_POINTS:]]
+        )
+
+    peak_to_limit = safe_ratio(peak_rps_1s, current_limit, 0.0)
+    observed_to_limit = safe_ratio(observed_rps, current_limit, 0.0)
+    load_ratio = safe_ratio(max(observed_rps, predicted_rps), current_limit, 0.0)
+
+    return {
+        "observed_rps": observed_rps,
+        "allowed_rps": allowed_rps,
+        "rejected_rps": rejected_rps,
+        "rejected_rate": rejected_rate,
+        "peak_rps_1s": peak_rps_1s,
+        "burst_ratio": burst_ratio,
+        "coefficient_of_variation": coeff,
+        "peak_to_limit_ratio": peak_to_limit,
+        "observed_to_limit_ratio": observed_to_limit,
+        "load_ratio": load_ratio,
+        "latency_p95": float(request.latencyP95 or 0.0),
+        "errors_5xx": float(request.errors5xx or 0),
+    }
+
+
+def score_algorithms(features: Dict[str, float]) -> Dict[str, float]:
+    burst_excess = clamp01((features["burst_ratio"] - 1.15) / 0.85)
+    variability = clamp01((features["coefficient_of_variation"] - 0.15) / 0.55)
+    peak_excess = clamp01((features["peak_to_limit_ratio"] - 1.0) / 1.5)
+    load_pressure = clamp01((features["load_ratio"] - 0.75) / 0.75)
+    reject_pressure = clamp01(
+        safe_ratio(features["rejected_rate"], REJECTED_RATE_THRESHOLD, 0.0)
+    )
+    latency_pressure = clamp01(
+        safe_ratio(features["latency_p95"], LATENCY_P95_THRESHOLD, 0.0)
+    )
+    error_pressure = 1.0 if features["errors_5xx"] >= ERRORS_5XX_THRESHOLD > 0 else 0.0
+    token_moderate_overload = (
+        features["rejected_rate"] >= 0.25
+        and 1.0 <= features["burst_ratio"] <= 1.4
+        and 1.35 <= features["peak_to_limit_ratio"] <= 1.75
+        and features["coefficient_of_variation"] <= 0.6
+    )
+    token_sustained_overload = (
+        features["rejected_rate"] >= 0.45
+        and 0.95 <= features["burst_ratio"] <= 1.25
+        and 1.35 <= features["peak_to_limit_ratio"] <= 2.0
+        and features["coefficient_of_variation"] <= 0.25
+        and features["load_ratio"] >= 1.25
+    )
+    token_extreme_overload = is_token_extreme_overload(features)
+
+    steady_signal = clamp01(1.0 - 0.7 * burst_excess - 0.7 * variability)
+    sliding_variability_fit = 1.0 - min(1.0, abs(variability - 0.45) / 0.45)
+    sliding_burst_fit = 1.0 - min(1.0, abs(burst_excess - 0.4) / 0.4)
+
+    fixed_score = (
+        55.0
+        + 30.0 * steady_signal
+        + 10.0 * (1.0 - load_pressure)
+        - 20.0 * burst_excess
+        - 12.0 * reject_pressure
+        - 8.0 * latency_pressure
+        - 8.0 * error_pressure
+    )
+    sliding_score = (
+        55.0
+        + 20.0 * sliding_variability_fit
+        + 15.0 * sliding_burst_fit
+        + 10.0 * load_pressure
+        + 10.0 * reject_pressure
+        + 8.0 * latency_pressure
+        + 6.0 * error_pressure
+        - 5.0 * peak_excess
+    )
+    token_score = (
+        48.0
+        + 25.0 * burst_excess
+        + 18.0 * peak_excess
+        + 10.0 * variability
+        + 8.0 * load_pressure
+        + 6.0 * reject_pressure
+        - 10.0 * steady_signal
+    )
+    if token_moderate_overload:
+        token_score += 28.0
+    if token_sustained_overload:
+        token_score += 32.0
+        sliding_score -= 6.0
+    if token_extreme_overload:
+        token_score += 40.0
+        sliding_score -= 18.0
+
+    return {
+        "fixed": round(clamp(fixed_score, 0.0, 100.0), 3),
+        "sliding": round(clamp(sliding_score, 0.0, 100.0), 3),
+        "token": round(clamp(token_score, 0.0, 100.0), 3),
+    }
+
+
+def update_selector_candidate(state: RecommendationState, candidate_algorithm: str) -> None:
+    if state.last_selector_candidate == candidate_algorithm:
+        state.selector_candidate_streak += 1
+        return
+    state.last_selector_candidate = candidate_algorithm
+    state.selector_candidate_streak = 1
+
+
+def is_token_burst_fast_path(features: Dict[str, float]) -> bool:
+    return (
+        features["burst_ratio"] >= 2.0
+        and features["peak_to_limit_ratio"] >= 2.0
+        and features["load_ratio"] <= 1.05
+    )
+
+
+def is_token_moderate_overload(features: Dict[str, float]) -> bool:
+    return (
+        features["rejected_rate"] >= 0.25
+        and 1.0 <= features["burst_ratio"] <= 1.4
+        and 1.35 <= features["peak_to_limit_ratio"] <= 1.75
+        and features["coefficient_of_variation"] <= 0.6
+    )
+
+
+def is_token_sustained_overload(features: Dict[str, float]) -> bool:
+    return (
+        features["rejected_rate"] >= 0.45
+        and 0.95 <= features["burst_ratio"] <= 1.25
+        and 1.35 <= features["peak_to_limit_ratio"] <= 2.0
+        and features["coefficient_of_variation"] <= 0.25
+        and features["load_ratio"] >= 1.25
+    )
+
+
+def is_token_extreme_overload(features: Dict[str, float]) -> bool:
+    return (
+        features["rejected_rate"] >= TOKEN_EXTREME_OVERLOAD_REJECT_RATE
+        and features["observed_rps"] >= MIN_SWITCH_TRAFFIC_RPS
+        and features["observed_to_limit_ratio"] >= TOKEN_EXTREME_OVERLOAD_RATIO
+        and features["peak_to_limit_ratio"] >= TOKEN_EXTREME_OVERLOAD_PEAK_RATIO
+    )
+
+
+def is_stable_recovery_window(features: Dict[str, float]) -> bool:
+    latency_recovered = features["latency_p95"] <= LATENCY_P95_THRESHOLD or (
+        features["rejected_rate"] <= 0.0
+        and features["observed_to_limit_ratio"] <= 1.02
+    )
+    return (
+        features["rejected_rate"] <= 0.02
+        and features["errors_5xx"] <= 0.0
+        and features["burst_ratio"] <= 1.15
+        and features["coefficient_of_variation"] <= 0.35
+        and latency_recovered
+    )
+
+
+def is_sliding_starved(features: Dict[str, float]) -> bool:
+    return (
+        features["rejected_rate"] >= SLIDING_STARVATION_REJECT_RATE
+        and features["burst_ratio"] <= 1.15
+        and features["coefficient_of_variation"] <= 0.35
+        and features["observed_rps"] >= MIN_SWITCH_TRAFFIC_RPS
+        and features["observed_to_limit_ratio"] >= SLIDING_STARVATION_RATIO
+    )
+
+
+def select_algorithm(
+    current_algorithm: str,
+    scores: Dict[str, float],
+    features: Dict[str, float],
+    state: RecommendationState,
+    now: datetime,
+    track_switch_state: bool,
+) -> str:
+    recommendable_scores = {
+        algorithm: score
+        for algorithm, score in scores.items()
+        if algorithm in RECOMMENDABLE_ALGORITHMS
+    }
+    if not recommendable_scores:
+        return current_algorithm
+
+    candidate_algorithm, candidate_score = max(
+        recommendable_scores.items(), key=lambda item: item[1]
+    )
+    update_selector_candidate(state, candidate_algorithm)
+    token_burst_fast_path = (
+        candidate_algorithm == "token" and is_token_burst_fast_path(features)
+    )
+    token_moderate_overload = (
+        candidate_algorithm == "token" and is_token_moderate_overload(features)
+    )
+    token_sustained_overload = (
+        candidate_algorithm == "token" and is_token_sustained_overload(features)
+    )
+    token_extreme_overload = is_token_extreme_overload(features)
+    sliding_starved = is_sliding_starved(features)
+
+    current_score = scores.get(current_algorithm, 0.0)
+    algo_switch_allowed = ALLOW_ALGO_SWITCH and (
+        state.last_algo_switch_at is None
+        or (now - state.last_algo_switch_at).total_seconds() >= MIN_ALGO_SWITCH_INTERVAL_SECONDS
+    )
+    token_hold_active = (
+        current_algorithm == "token"
+        and state.last_algo_switch_at is not None
+        and (now - state.last_algo_switch_at).total_seconds() < TOKEN_MIN_HOLD_SECONDS
+    )
+    if (
+        features["observed_rps"] < MIN_SWITCH_TRAFFIC_RPS
+        and features["rejected_rate"] <= 0.0
+    ):
+        state.fixed_escape_streak = 0
+        return current_algorithm
+    if (
+        current_algorithm == "sliding"
+        and (sliding_starved or token_extreme_overload)
+        and "token" in RECOMMENDABLE_ALGORITHMS
+        and algo_switch_allowed
+    ):
+        if track_switch_state:
+            state.last_algo_switch_at = now
+        state.last_selector_candidate = "token"
+        state.selector_candidate_streak = max(1, state.selector_candidate_streak)
+        return "token"
+
+    effective_margin = ALGORITHM_SCORE_MARGIN
+    if (
+        features["rejected_rate"] >= REJECTED_RATE_THRESHOLD * 2
+        or features["peak_to_limit_ratio"] >= DDOS_MULTIPLIER
+    ):
+        effective_margin = min(ALGORITHM_SCORE_MARGIN, ALGORITHM_SCORE_MARGIN_OVERLOAD)
+    if (
+        token_burst_fast_path
+        or token_moderate_overload
+        or token_sustained_overload
+        or token_extreme_overload
+    ):
+        effective_margin = 0.0
+
+    if current_algorithm == "fixed":
+        non_fixed_scores = [
+            (algorithm, score)
+            for algorithm, score in recommendable_scores.items()
+            if algorithm != "fixed"
+        ]
+        if non_fixed_scores:
+            non_fixed_algorithm, non_fixed_score = max(
+                non_fixed_scores, key=lambda item: item[1]
+            )
+            if non_fixed_score >= current_score + effective_margin:
+                state.fixed_escape_streak += 1
+            else:
+                state.fixed_escape_streak = 0
+            if (
+                algo_switch_allowed
+                and state.fixed_escape_streak >= max(1, FIXED_ESCAPE_STREAK_REQUIRED)
+            ):
+                if track_switch_state:
+                    state.last_algo_switch_at = now
+                state.fixed_escape_streak = 0
+                state.last_selector_candidate = non_fixed_algorithm
+                state.selector_candidate_streak = max(
+                    state.selector_candidate_streak, FIXED_ESCAPE_STREAK_REQUIRED
+                )
+                return non_fixed_algorithm
+        else:
+            state.fixed_escape_streak = 0
+    else:
+        state.fixed_escape_streak = 0
+
+    selector_confident = (
+        candidate_algorithm != current_algorithm
+        and candidate_score >= current_score + effective_margin
+        and state.selector_candidate_streak
+        >= (
+            1
+            if token_burst_fast_path
+            else 1
+            if token_moderate_overload or token_sustained_overload
+            else max(1, SELECTOR_STREAK_REQUIRED)
+        )
+    )
+
+    token_overload_hold = (
+        current_algorithm == "token"
+        and candidate_algorithm != "token"
+        and (
+            features["rejected_rate"] >= 0.2
+            or features["observed_to_limit_ratio"] >= 1.2
+            or features["peak_to_limit_ratio"] >= DDOS_MULTIPLIER
+        )
+    )
+    token_recovery_ready = (
+        current_algorithm == "token"
+        and candidate_algorithm == "sliding"
+        and state.recovery_streak >= max(1, RECOVERY_STREAK_REQUIRED)
+        and state.token_non_burst_streak >= max(1, TOKEN_EXIT_NON_BURST_STREAK)
+        and is_stable_recovery_window(features)
+        and features["observed_to_limit_ratio"] <= TOKEN_EXIT_UTILIZATION_MAX
+    )
+
+    if current_algorithm == "token" and candidate_algorithm != "token":
+        if token_hold_active or token_overload_hold:
+            return current_algorithm
+        if (
+            candidate_algorithm == "sliding"
+            and is_stable_recovery_window(features)
+            and not token_recovery_ready
+        ):
+            return current_algorithm
+    if algo_switch_allowed and selector_confident:
+        if track_switch_state:
+            state.last_algo_switch_at = now
+        return candidate_algorithm
+    return current_algorithm
+
+
 def build_response(
     algorithm: str,
     target_rps: float,
     current_config: LimitConfigIn,
     predicted_rps: Optional[float],
+    token_capacity_seconds: Optional[float] = None,
 ) -> LimitConfigResponse:
     max_rps = MAX_RPS if MAX_RPS > 0 else None
     if algorithm in ("fixed", "sliding"):
@@ -506,8 +1015,9 @@ def build_response(
     if max_rps is not None:
         min_token_fill_rate = min(min_token_fill_rate, max_rps)
     fill_rate = clamp(target_rps, min_token_fill_rate, max_rps)
-    capacity = int(math.ceil(fill_rate * TOKEN_CAPACITY_SECONDS))
-    capacity = max(capacity, int(math.ceil(MIN_RPS * TOKEN_CAPACITY_SECONDS)))
+    capacity_seconds = token_capacity_seconds or TOKEN_CAPACITY_SECONDS
+    capacity = int(math.ceil(fill_rate * capacity_seconds))
+    capacity = max(capacity, int(math.ceil(MIN_RPS * capacity_seconds)))
     if capacity < fill_rate:
         capacity = int(math.ceil(fill_rate))
     if MAX_CAPACITY > 0:
@@ -539,31 +1049,74 @@ def recommend_config(
     state: RecommendationState,
     now: datetime,
 ) -> LimitConfigResponse:
-    current_config = request.currentConfig
+    apply_recommendations = bool(request.applyRecommendations)
+    actual_current_config = request.currentConfig
+    if apply_recommendations:
+        state.shadow_current_config = None
+        current_config = actual_current_config
+    else:
+        if state.shadow_current_config is None:
+            state.shadow_current_config = actual_current_config
+        current_config = state.shadow_current_config
     current_limit = current_rps_limit(current_config)
     max_rps = MAX_RPS if MAX_RPS > 0 else None
     predicted_rps = clamp(predicted_rps, 0.0, max_rps)
+    telemetry = derive_input_telemetry(
+        request, predicted_rps, history_points, max(current_limit, MIN_RPS)
+    )
 
+    latency_overload = (
+        request.latencyP95 is not None
+        and request.latencyP95 >= LATENCY_P95_THRESHOLD
+        and (
+            telemetry["rejected_rate"] > 0.0
+            or telemetry["observed_to_limit_ratio"] >= 1.1
+            or (request.errors5xx is not None and request.errors5xx >= ERRORS_5XX_THRESHOLD)
+        )
+    )
     overload = False
     if request.rejectedRate is not None and request.rejectedRate >= REJECTED_RATE_THRESHOLD:
         overload = True
-    if request.latencyP95 is not None and request.latencyP95 >= LATENCY_P95_THRESHOLD:
+    if latency_overload:
         overload = True
     if request.errors5xx is not None and request.errors5xx >= ERRORS_5XX_THRESHOLD:
         overload = True
 
     observed_spike = request.observedRps >= current_limit * DDOS_MULTIPLIER
     predicted_spike = predicted_rps >= current_limit * DDOS_MULTIPLIER
+    predicted_spike_recovery = predicted_spike and not overload and is_stable_recovery_window(
+        telemetry
+    )
+    token_extreme_overload = is_token_extreme_overload(telemetry)
+    sliding_starved = is_sliding_starved(telemetry)
     target_rps = current_limit
 
-    if overload or predicted_spike:
-        target_rps = current_limit * DECREASE_FACTOR
+    if overload:
+        target_rps = max(MIN_RPS, telemetry["allowed_rps"]) * DECREASE_FACTOR
+    elif predicted_spike_recovery:
+        target_rps = max(
+            current_limit,
+            telemetry["allowed_rps"],
+            telemetry["observed_rps"] * RECOVERY_HEADROOM,
+        )
+    elif predicted_spike:
+        target_rps = max(MIN_RPS, telemetry["allowed_rps"]) * DECREASE_FACTOR
     elif predicted_rps > current_limit * (1 + INCREASE_THRESHOLD):
         target_rps = predicted_rps * (1 + INCREASE_HEADROOM)
 
+    step_floor = current_limit * MAX_STEP_DOWN_FACTOR
+    step_ceiling = current_limit * MAX_STEP_UP_FACTOR
+    if current_limit > 0 and math.isfinite(step_floor) and math.isfinite(step_ceiling):
+        target_rps = clamp(target_rps, step_floor, step_ceiling)
     target_rps = clamp(target_rps, MIN_RPS, max_rps)
     if not math.isfinite(target_rps):
         target_rps = current_limit
+    if sliding_starved:
+        target_rps = max(
+            target_rps,
+            telemetry["allowed_rps"],
+            telemetry["observed_rps"] * RECOVERY_HEADROOM,
+        )
 
     bursty = is_bursty(history_points)
     attack_signal = overload or observed_spike
@@ -580,34 +1133,80 @@ def recommend_config(
         else:
             state.token_non_burst_streak = 0
 
-    desired_algorithm = current_config.algorithm
-    algo_switch_allowed = ALLOW_ALGO_SWITCH and (
-        state.last_algo_switch_at is None
-        or (now - state.last_algo_switch_at).total_seconds() >= MIN_ALGO_SWITCH_INTERVAL_SECONDS
+    algorithm_scores = score_algorithms(telemetry)
+    desired_algorithm = select_algorithm(
+        current_config.algorithm,
+        algorithm_scores,
+        telemetry,
+        state,
+        now,
+        apply_recommendations,
     )
-    token_hold_active = (
-        current_config.algorithm == "token"
-        and state.last_algo_switch_at is not None
-        and (now - state.last_algo_switch_at).total_seconds() < TOKEN_MIN_HOLD_SECONDS
-    )
-    enough_recovery_samples = (
-        state.recovery_streak >= max(1, RECOVERY_STREAK_REQUIRED)
-        and state.token_non_burst_streak >= max(1, TOKEN_EXIT_NON_BURST_STREAK)
-    )
-
-    if current_config.algorithm not in ("token", "sliding"):
-        desired_algorithm = "sliding" if state.attack_streak >= max(1, ATTACK_STREAK_REQUIRED) else "token"
-    elif current_config.algorithm == "token":
-        desired_algorithm = "token"
-        if state.attack_streak >= max(1, ATTACK_STREAK_REQUIRED) and algo_switch_allowed and not token_hold_active:
-            desired_algorithm = "sliding"
-    elif current_config.algorithm == "sliding":
-        desired_algorithm = "sliding"
-        if enough_recovery_samples and algo_switch_allowed:
-            desired_algorithm = "token"
+    token_capacity_seconds = None
+    if desired_algorithm == "token":
+        if (
+            current_config.algorithm == "token"
+            and telemetry["rejected_rate"] >= 0.15
+            and telemetry["burst_ratio"] < 1.8
+        ):
+            token_capacity_seconds = min(
+                TOKEN_CAPACITY_SECONDS,
+                max(1.0, TOKEN_SMOOTH_CAPACITY_SECONDS),
+            )
+        keep_token_floor = (
+            current_config.algorithm != "token"
+            or telemetry["rejected_rate"] > 0.0
+            or telemetry["burst_ratio"] >= 1.5
+            or telemetry["load_ratio"] >= 1.0
+        )
+        if keep_token_floor:
+            if token_extreme_overload:
+                target_rps = max(
+                    target_rps,
+                    current_limit,
+                    telemetry["allowed_rps"] + telemetry["rejected_rps"] * TOKEN_OVERLOAD_GAIN,
+                    telemetry["observed_rps"] * 0.5,
+                )
+            elif current_config.algorithm == "token" and telemetry["rejected_rate"] > 0.0:
+                target_rps = max(
+                    current_limit,
+                    telemetry["allowed_rps"],
+                    telemetry["allowed_rps"]
+                    + telemetry["rejected_rps"] * TOKEN_OVERLOAD_GAIN,
+                )
+            else:
+                target_rps = max(
+                    current_limit,
+                    telemetry["allowed_rps"],
+                    min(telemetry["observed_rps"], max(current_limit, predicted_rps)),
+                )
+        if predicted_spike_recovery:
+            target_rps = max(
+                target_rps,
+                telemetry["allowed_rps"],
+                telemetry["observed_rps"] * RECOVERY_HEADROOM,
+            )
+        if sliding_starved:
+            target_rps = max(
+                target_rps,
+                telemetry["allowed_rps"],
+                telemetry["observed_rps"] * RECOVERY_HEADROOM,
+            )
+        target_rps = clamp(target_rps, MIN_RPS, max_rps)
+    elif desired_algorithm == "sliding":
+        if predicted_spike_recovery or sliding_starved:
+            target_rps = max(
+                target_rps,
+                telemetry["allowed_rps"],
+                telemetry["observed_rps"] * RECOVERY_HEADROOM,
+            )
 
     recommendation = build_response(
-        desired_algorithm, target_rps, current_config, round(predicted_rps, 3)
+        desired_algorithm,
+        target_rps,
+        current_config,
+        round(predicted_rps, 3),
+        token_capacity_seconds,
     )
 
     change_ratio = 0.0
@@ -615,13 +1214,24 @@ def recommend_config(
         change_ratio = abs(target_rps - current_limit) / current_limit
 
     recent_change_block = (
-        state.last_change_at is not None
+        apply_recommendations
+        and state.last_change_at is not None
         and (now - state.last_change_at).total_seconds() < MIN_CHANGE_INTERVAL_SECONDS
     )
 
     if configs_equal(current_config, recommendation):
+        if not apply_recommendations:
+            state.shadow_current_config = current_config
         return recommendation
     if desired_algorithm == current_config.algorithm and change_ratio < MIN_RELATIVE_CHANGE:
+        if not apply_recommendations:
+            state.shadow_current_config = current_config
+            return build_response(
+                current_config.algorithm,
+                current_limit,
+                current_config,
+                round(predicted_rps, 3),
+            )
         return build_response(
             current_config.algorithm,
             current_limit,
@@ -629,6 +1239,14 @@ def recommend_config(
             round(predicted_rps, 3),
         )
     if recent_change_block and desired_algorithm == current_config.algorithm:
+        if not apply_recommendations:
+            state.shadow_current_config = current_config
+            return build_response(
+                current_config.algorithm,
+                current_limit,
+                current_config,
+                round(predicted_rps, 3),
+            )
         return build_response(
             current_config.algorithm,
             current_limit,
@@ -636,15 +1254,20 @@ def recommend_config(
             round(predicted_rps, 3),
         )
 
-    state.last_change_at = now
-    if desired_algorithm != current_config.algorithm:
-        state.last_algo_switch_at = now
-        if desired_algorithm == "token":
+    if apply_recommendations:
+        state.last_change_at = now
+        if desired_algorithm != current_config.algorithm:
             state.attack_streak = 0
             state.recovery_streak = 0
             state.token_non_burst_streak = 0
+    else:
+        if desired_algorithm != current_config.algorithm:
+            state.shadow_current_config = config_from_response(
+                recommendation, current_config
+            )
         else:
-            state.recovery_streak = 0
+            state.shadow_current_config = current_config
+    state.last_predicted_rps = round(predicted_rps, 3)
     return recommendation
 
 
@@ -783,11 +1406,17 @@ async def limit_config(request: LimitConfigRequest) -> LimitConfigResponse:
         recommendation = recommend_config(request, predicted, history, state, received_at)
         state.last_good_recommendation = recommendation
         state.last_good_config = request.currentConfig
-    update_metrics(request, predicted_rps, recommendation, len(history), "ok")
+    telemetry = derive_input_telemetry(
+        request, predicted, history, max(current_rps_limit(request.currentConfig), MIN_RPS)
+    )
+    algorithm_scores = score_algorithms(telemetry)
+    update_metrics(request, predicted_rps, recommendation, len(history), "ok", algorithm_scores)
     logging.info(
-        "forecast predicted_rps=%.3f current_rps_limit=%.3f recommendation=%s",
+        "forecast predicted_rps=%.3f current_rps_limit=%.3f features=%s selector_scores=%s recommendation=%s",
         predicted_rps,
         current_rps_limit(request.currentConfig),
+        {key: round(value, 3) for key, value in telemetry.items()},
+        algorithm_scores,
         recommendation.dict(exclude_none=True),
     )
     return recommendation

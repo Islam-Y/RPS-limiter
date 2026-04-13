@@ -10,9 +10,13 @@ import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import ru.itmo.rate_limiter_service.config.RateLimiterProperties;
 import ru.itmo.rate_limiter_service.model.Algorithm;
+import ru.itmo.rate_limiter_service.model.RateLimiterConfigPayload;
 import ru.itmo.rate_limiter_service.service.RateLimiterConfigService;
 import ru.itmo.rate_limiter_service.service.RedisAvailability;
 
@@ -20,15 +24,24 @@ import ru.itmo.rate_limiter_service.service.RedisAvailability;
 @RequiredArgsConstructor
 public class RateLimiterMetrics {
 	private final MeterRegistry registry;
+	private final RateLimiterProperties properties;
 	private final RateLimiterConfigService configService;
 	private final RedisAvailability redisAvailability;
 
 	private Counter forwarded;
 	private Counter rejected;
+	private Counter adaptiveApplied;
+	private Counter adaptiveShadow;
+	private Map<String, Counter> adaptiveByAlgorithm;
 	private Map<Algorithm, Counter> byAlgorithm;
 	private Timer requestTimer;
 	private Timer redisTimer;
 	private Counter redisErrors;
+	private final AtomicReference<Algorithm> adaptiveRecommendedAlgorithm = new AtomicReference<>(Algorithm.FIXED);
+	private final AtomicLong adaptiveRecommendedLimit = new AtomicLong();
+	private final AtomicLong adaptiveRecommendedWindowSeconds = new AtomicLong();
+	private final AtomicLong adaptiveRecommendedCapacity = new AtomicLong();
+	private final AtomicReference<Double> adaptiveRecommendedFillRate = new AtomicReference<>(0.0);
 
 	@PostConstruct
 	public void init() {
@@ -56,6 +69,24 @@ public class RateLimiterMetrics {
 			.register(registry);
 		this.redisErrors = Counter.builder("ratelimiter_redis_errors_total")
 			.register(registry);
+		this.adaptiveApplied = Counter.builder("ratelimiter_adaptive_recommendations_total")
+			.tag("mode", "applied")
+			.register(registry);
+		this.adaptiveShadow = Counter.builder("ratelimiter_adaptive_recommendations_total")
+			.tag("mode", "shadow")
+			.register(registry);
+		this.adaptiveByAlgorithm = new java.util.HashMap<>();
+		for (String mode : new String[] { "applied", "shadow" }) {
+			for (Algorithm algorithm : Algorithm.values()) {
+				adaptiveByAlgorithm.put(
+					mode + ":" + algorithm.name(),
+					Counter.builder("ratelimiter_adaptive_recommendations_by_algorithm_total")
+						.tag("mode", mode)
+						.tag("algorithm", algorithm.toJson())
+						.register(registry)
+				);
+			}
+		}
 
 		Gauge.builder("ratelimiter_current_limit", () -> configService.getCurrent().getLimit())
 			.register(registry);
@@ -70,6 +101,24 @@ public class RateLimiterMetrics {
 			.register(registry);
 		Gauge.builder("ratelimiter_mode", () -> redisAvailability.isAvailable() ? 0 : 1)
 			.tag("type", "failopen")
+			.register(registry);
+		Gauge.builder("ratelimiter_adaptive_apply_enabled", () -> properties.getAdaptive().isApplyRecommendations() ? 1 : 0)
+			.register(registry);
+		for (Algorithm algorithm : Algorithm.values()) {
+			Gauge.builder("ratelimiter_adaptive_recommended_algorithm",
+					() -> adaptiveRecommendedAlgorithm.get() == algorithm ? 1 : 0)
+				.tag("algorithm", algorithm.toJson())
+				.register(registry);
+		}
+		Gauge.builder("ratelimiter_adaptive_recommended_limit", adaptiveRecommendedLimit, value -> value.get())
+			.register(registry);
+		Gauge.builder("ratelimiter_adaptive_recommended_window_seconds",
+				adaptiveRecommendedWindowSeconds, value -> value.get())
+			.register(registry);
+		Gauge.builder("ratelimiter_adaptive_recommended_capacity", adaptiveRecommendedCapacity, value -> value.get())
+			.register(registry);
+		Gauge.builder("ratelimiter_adaptive_recommended_fill_rate",
+				adaptiveRecommendedFillRate, value -> value.get())
 			.register(registry);
 	}
 
@@ -103,6 +152,31 @@ public class RateLimiterMetrics {
 
 	public void incrementRedisError() {
 		redisErrors.increment();
+	}
+
+	public void recordAdaptiveRecommendation(RateLimiterConfigPayload payload, boolean applied) {
+		if (payload == null) {
+			return;
+		}
+		if (applied) {
+			adaptiveApplied.increment();
+		} else {
+			adaptiveShadow.increment();
+		}
+
+		Algorithm algorithm = payload.getAlgorithm();
+		if (algorithm != null) {
+			String mode = applied ? "applied" : "shadow";
+			Counter algorithmCounter = adaptiveByAlgorithm.get(mode + ":" + algorithm.name());
+			if (algorithmCounter != null) {
+				algorithmCounter.increment();
+			}
+			adaptiveRecommendedAlgorithm.set(algorithm);
+		}
+		adaptiveRecommendedLimit.set(payload.getLimit() != null ? payload.getLimit() : 0L);
+		adaptiveRecommendedWindowSeconds.set(payload.getWindow() != null ? payload.getWindow() : 0L);
+		adaptiveRecommendedCapacity.set(payload.getCapacity() != null ? payload.getCapacity() : 0L);
+		adaptiveRecommendedFillRate.set(payload.getFillRate() != null ? payload.getFillRate() : 0.0);
 	}
 
 	public double getRequestLatencyP95() {

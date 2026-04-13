@@ -1,0 +1,7 @@
+scenario,sliding_count,token_count,shadow_winner
+constant_low,3,0,sliding
+sinusoidal,3,0,sliding
+poisson,0,3,token
+constant_high,3,0,sliding
+burst,0,3,token
+ddos,3,0,sliding

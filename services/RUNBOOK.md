@@ -75,6 +75,13 @@ Grafana UI: http://localhost:3000 (default: admin/admin)
 - `RATE_LIMIT_LIMIT`, `RATE_LIMIT_WINDOW_SECONDS`
 - `RATE_LIMIT_CAPACITY`, `RATE_LIMIT_FILL_RATE`
 - `ADAPTIVE_ENABLED`, `ADAPTIVE_URL` (если используется AI)
+- `ADAPTIVE_APPLY_RECOMMENDATIONS`
+  - `false` = shadow mode, рекомендации только считаются и публикуются в метриках
+  - `true` = рекомендации AI применяются автоматически
+- Для docker-compose production-профиль по умолчанию:
+  - стартовый `RATE_LIMIT_ALGORITHM=sliding`
+  - adaptive selector ограничен `RECOMMENDABLE_ALGORITHMS=sliding,token`
+  - `fixed` остается доступен для ручных тестов и benchmark-сравнения
 
 ### Service A (load‑generator)
 - `LOADGEN_CONFIG_FILE` (опционально, автозапуск теста)
@@ -255,10 +262,16 @@ curl -X POST "$AI_URL/v1/limit-config" \
   -d '{
     "timestamp":"2026-02-04T18:00:00Z",
     "observedRps":120.5,
+    "allowedRps":110.0,
+    "rejectedRps":10.5,
     "rejectedRate":0.12,
+    "peakRps1s":180.0,
+    "burstRatio":1.49,
+    "coefficientOfVariation":0.31,
     "latencyP95":0.45,
     "errors5xx":2,
-    "currentConfig":{"algorithm":"fixed","limit":100,"window":60}
+    "applyRecommendations":false,
+    "currentConfig":{"algorithm":"sliding","limit":100,"window":60}
   }'
 ```
 Негативный пример:
@@ -270,7 +283,9 @@ curl -X POST "$AI_URL/v1/limit-config" \
     "currentConfig":{"algorithm":"fixed","limit":0,"window":0}
   }'
 ```
-Ожидание: сервис отвечает стабильно (fallback на некорректных данных).
+Ожидание:
+- сервис отвечает стабильно (fallback на некорректных данных);
+- в `shadow mode` (`applyRecommendations=false`) повторные burst-рекомендации не должны подавляться cooldown-логикой как будто switch уже был применен.
 
 Postman:
 - `POST {{AI_URL}}/v1/limit-config` (валидный body)
@@ -284,12 +299,25 @@ before=$(curl -s "$AI_URL/metrics" | awk '/^ai_limit_config_requests_total\\{/{s
 sleep 35
 after=$(curl -s "$AI_URL/metrics" | awk '/^ai_limit_config_requests_total\\{/{s+=$NF} END {print s+0}')
 echo "$before -> $after"
+
+curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_adaptive_(apply_enabled|recommendations_total|recommended_algorithm|recommended_limit|recommended_fill_rate)'
 ```
-Ожидание: счетчик увеличивается (при `ADAPTIVE_ENABLED=true` и доступном Redis).
+Ожидание:
+- счетчик `ai_limit_config_requests_total` увеличивается;
+- в Service C появляются `ratelimiter_adaptive_recommendations_total`;
+- в Service C появляются `ratelimiter_adaptive_recommendations_by_algorithm_total`;
+- при `ADAPTIVE_APPLY_RECOMMENDATIONS=false`:
+  - `ratelimiter_adaptive_apply_enabled = 0`
+  - растет `ratelimiter_adaptive_recommendations_total{mode="shadow"}`
+  - для анализа selector vs static нужно смотреть на `ratelimiter_adaptive_recommendations_by_algorithm_total{algorithm=...,mode="shadow"}`
+  - `ratelimiter_adaptive_recommended_algorithm{algorithm=...}` показывает только последнюю рекомендацию и может скрыть промежуточные переключения в течение теста
+  - текущий конфиг лимитера не меняется автоматически.
 
 Postman:
 - `GET {{AI_URL}}/metrics` (до/после 30-40 секунд)
 - Проверить рост `ai_limit_config_requests_total`.
+- `GET {{C_URL}}/actuator/prometheus`
+- Проверить `ratelimiter_adaptive_apply_enabled`, `ratelimiter_adaptive_recommendations_total` и `ratelimiter_adaptive_recommendations_by_algorithm_total`.
 
 ### 7.9 Этап 8 — Redis fail-open и восстановление (Scenario 4)
 curl/terminal:
@@ -436,6 +464,32 @@ scripts/battle_matrix.sh --disable-adaptive --duration 10
     - `stability = 100 - error_percent`.
     - `protection` сравнивает фактический `%429` с ожидаемым по перегрузке.
     - `latency` нормализуется внутри каждого сценария (лучший latency получает 100).
+
+Смешанный сценарий для проверки универсальности adaptive-контура:
+```bash
+bash scripts/adaptive_phase_benchmark.sh \
+  --scenarios phase_universal_mix \
+  --phase-seconds 30 \
+  --repeats 3 \
+  --adaptive-start-algorithm sliding \
+  --output-prefix monitoring/benchmarks/adaptive-phase-universal
+```
+Что делает сценарий `phase_universal_mix`:
+- `steady` -> `poisson` -> `burst` -> `ddos` -> `recovery`
+- сравнивает `static_token`, `static_sliding`, `adaptive`
+- для adaptive включает реальное применение рекомендаций (`ADAPTIVE_APPLY_RECOMMENDATIONS=true`), а не shadow mode
+
+Выходные файлы mixed-benchmark:
+- `<prefix>.raw.csv` — пофазные сырые метрики
+- `<prefix>.summary.csv` — агрегированные метрики по фазам
+- `<prefix>.switch-summary.csv` — среднее число переключений и время в каждом алгоритме
+- `<prefix>.timeline.csv` — покадровая timeline adaptive-переключений
+- `<prefix>.figures/` — PNG графики по фазам и timeline
+
+Важно:
+- для mixed-benchmark длина фазы должна быть не меньше 2 интервалов adaptive polling, иначе контур физически не успеет среагировать;
+- при текущем `ADAPTIVE_INTERVAL=10s` технический минимум — `phase-seconds=20`, но для репрезентативного прогона лучше оставлять `phase-seconds=30`.
+- текущий `docker-compose.yml` уже использует latency-aware профиль для mixed workload: `TOKEN_OVERLOAD_GAIN=0.30`, `TOKEN_SMOOTH_CAPACITY_SECONDS=1.2`, `LATENCY_P95_THRESHOLD=0.06`.
 
 Итог приемки: тесты из этапов 1-12 закрывают health, API, алгоритмы, профили нагрузки, 429-логику, fail-open/recovery, AI, проксирование методов, мониторинг и количественное сравнение алгоритмов.
 

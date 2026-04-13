@@ -14,6 +14,10 @@ BENCHMARK_CONCURRENCY="${BENCHMARK_CONCURRENCY:-256}"
 REPEATS=6
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-monitoring/benchmarks/adaptive-phase-$(date +%Y%m%d-%H%M%S)}"
 BENCHMARK_BUILD="${BENCHMARK_BUILD:-false}"
+ADAPTIVE_START_ALGORITHM="${ADAPTIVE_START_ALGORITHM:-sliding}"
+RESTORE_ADAPTIVE_ENABLED="${RESTORE_ADAPTIVE_ENABLED:-true}"
+RESTORE_ADAPTIVE_APPLY_RECOMMENDATIONS="${RESTORE_ADAPTIVE_APPLY_RECOMMENDATIONS:-false}"
+RESTORE_ALGORITHM="${RESTORE_ALGORITHM:-sliding}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGGREGATOR_SCRIPT="$SCRIPT_DIR/aggregate_phase_benchmark.py"
@@ -25,6 +29,7 @@ SWITCHES_CSV=""
 SWITCH_SUMMARY_CSV=""
 TIMELINE_CSV=""
 FIGURES_DIR=""
+ACTIVE_PHASE_NAMES=()
 
 usage() {
   cat <<'EOF'
@@ -35,10 +40,12 @@ Usage:
 
 Options:
   --phase-seconds <seconds>   Seconds per phase (default: 30)
-  --scenarios <csv>           phase_burst_recovery,phase_ddos_recovery
+  --scenarios <csv>           phase_burst_recovery,phase_ddos_recovery,phase_universal_mix
   --base-rps-limit <rps>      Base budget for fair config (default: 100)
   --window <seconds>          Window for sliding algorithm (default: 10)
   --repeats <n>               Repeats per scenario/mode (default: 6)
+  --adaptive-start-algorithm <algo>
+                              Initial adaptive algorithm: sliding or token (default: sliding)
   --build                     Rebuild images before benchmark start
   --output-prefix <prefix>    Output prefix (default: monitoring/benchmarks/adaptive-phase-<timestamp>)
   --help                      Show help
@@ -65,6 +72,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --repeats)
       REPEATS="$2"
+      shift 2
+      ;;
+    --adaptive-start-algorithm)
+      ADAPTIVE_START_ALGORITHM="$2"
       shift 2
       ;;
     --build)
@@ -105,6 +116,14 @@ if ! [[ "$REPEATS" =~ ^[0-9]+$ ]] || (( REPEATS <= 0 )); then
   echo "--repeats must be a positive integer" >&2
   exit 1
 fi
+case "$ADAPTIVE_START_ALGORITHM" in
+  sliding|token)
+    ;;
+  *)
+    echo "--adaptive-start-algorithm must be sliding or token" >&2
+    exit 1
+    ;;
+esac
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -164,14 +183,16 @@ reset_load_generator() {
   wait_for_http "$A_URL/actuator/health" "load-generator-service"
 }
 
-set_adaptive_mode() {
+set_rate_limiter_mode() {
   local enabled="$1"
-  ADAPTIVE_ENABLED="$enabled" docker compose up -d rate-limiter-service >/dev/null
+  local apply_recommendations="$2"
+  ADAPTIVE_ENABLED="$enabled" ADAPTIVE_APPLY_RECOMMENDATIONS="$apply_recommendations" \
+    docker compose up -d rate-limiter-service >/dev/null
   wait_for_http "$C_URL/actuator/health" "rate-limiter-service"
 }
 
 reset_adaptive_services() {
-  ADAPTIVE_ENABLED=true docker compose up -d rate-limiter-service >/dev/null
+  ADAPTIVE_ENABLED=true ADAPTIVE_APPLY_RECOMMENDATIONS=true docker compose up -d rate-limiter-service >/dev/null
   docker compose restart ai-module rate-limiter-service >/dev/null
   wait_for_http "$C_URL/actuator/health" "rate-limiter-service"
 }
@@ -267,13 +288,30 @@ algorithm_from_json() {
 
 phase_name_for_elapsed() {
   local elapsed="$1"
-  if (( elapsed < PHASE_SECONDS )); then
-    echo "normal"
-  elif (( elapsed < PHASE_SECONDS * 2 )); then
-    echo "attack"
-  else
-    echo "recovery"
+  local phase_count="${#ACTIVE_PHASE_NAMES[@]}"
+  if (( phase_count == 0 )); then
+    echo "unknown"
+    return
   fi
+  local phase_index=$(( elapsed / PHASE_SECONDS ))
+  if (( phase_index >= phase_count )); then
+    phase_index=$(( phase_count - 1 ))
+  fi
+  echo "${ACTIVE_PHASE_NAMES[$phase_index]}"
+}
+
+scenario_phase_csv() {
+  case "$1" in
+    phase_burst_recovery|phase_ddos_recovery)
+      echo "normal,attack,recovery"
+      ;;
+    phase_universal_mix)
+      echo "steady,poisson,burst,ddos,recovery"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 scenario_profile_json() {
@@ -292,6 +330,17 @@ EOF
 {"type":"phased","params":{"phases":[
   {"name":"normal","duration":"PT${PHASE_SECONDS}S","type":"constant","params":{"rps":40}},
   {"name":"attack","duration":"PT${PHASE_SECONDS}S","type":"ddos","params":{"minRps":35,"maxRps":320,"maxSpikeDuration":"PT2S","minIdleTime":"PT0S","maxIdleTime":"PT1S"}},
+  {"name":"recovery","duration":"PT${PHASE_SECONDS}S","type":"constant","params":{"rps":40}}
+]}}
+EOF
+      ;;
+    phase_universal_mix)
+      cat <<EOF
+{"type":"phased","params":{"phases":[
+  {"name":"steady","duration":"PT${PHASE_SECONDS}S","type":"constant","params":{"rps":40}},
+  {"name":"poisson","duration":"PT${PHASE_SECONDS}S","type":"poisson","params":{"averageRps":140}},
+  {"name":"burst","duration":"PT${PHASE_SECONDS}S","type":"burst","params":{"baseRps":20,"spikeRps":240,"spikeDuration":"PT2S","spikePeriod":"PT8S"}},
+  {"name":"ddos","duration":"PT${PHASE_SECONDS}S","type":"ddos","params":{"minRps":35,"maxRps":320,"maxSpikeDuration":"PT2S","minIdleTime":"PT0S","maxIdleTime":"PT1S"}},
   {"name":"recovery","duration":"PT${PHASE_SECONDS}S","type":"constant","params":{"rps":40}}
 ]}}
 EOF
@@ -540,6 +589,11 @@ append_phase_row() {
 
 cleanup() {
   stop_test_if_running || true
+  ADAPTIVE_ENABLED="$RESTORE_ADAPTIVE_ENABLED" \
+  ADAPTIVE_APPLY_RECOMMENDATIONS="$RESTORE_ADAPTIVE_APPLY_RECOMMENDATIONS" \
+    docker compose up -d rate-limiter-service >/dev/null 2>&1 || true
+  wait_for_http "$C_URL/actuator/health" "rate-limiter-service" 30 || true
+  configure_limits "$RESTORE_ALGORITHM" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -562,8 +616,9 @@ IFS=',' read -r -a scenarios <<<"$SCENARIOS_CSV"
 modes=("static_token" "static_sliding" "adaptive")
 
 echo "Running adaptive phase benchmark..."
-echo "duration=${DURATION_SECONDS}s phase_seconds=${PHASE_SECONDS}s scenarios=${SCENARIOS_CSV} repeats=${REPEATS}"
+echo "phase_seconds=${PHASE_SECONDS}s scenarios=${SCENARIOS_CSV} repeats=${REPEATS}"
 echo "base_rps_limit=${BASE_RPS_LIMIT} window=${WINDOW_SECONDS}s concurrency=${BENCHMARK_CONCURRENCY}"
+echo "adaptive_start_algorithm=${ADAPTIVE_START_ALGORITHM} adaptive_apply=true"
 echo
 
 current_mode=""
@@ -573,12 +628,21 @@ for scenario in "${scenarios[@]}"; do
     echo "Unsupported scenario: $scenario" >&2
     exit 1
   }
+  phase_csv="$(scenario_phase_csv "$scenario")" || {
+    echo "Unsupported scenario phase layout: $scenario" >&2
+    exit 1
+  }
+  IFS=',' read -r -a ACTIVE_PHASE_NAMES <<<"$phase_csv"
+  DURATION_SECONDS=$(( PHASE_SECONDS * ${#ACTIVE_PHASE_NAMES[@]} ))
 
   for mode in "${modes[@]}"; do
     if [[ "$mode" == "adaptive" ]]; then
+      if [[ "$current_mode" != "adaptive" ]]; then
+        set_rate_limiter_mode true true
+      fi
       current_mode="adaptive"
     elif [[ "$current_mode" != "static" ]]; then
-      set_adaptive_mode false
+      set_rate_limiter_mode false false
       current_mode="static"
     fi
 
@@ -587,7 +651,7 @@ for scenario in "${scenarios[@]}"; do
       stop_test_if_running
       if [[ "$mode" == "adaptive" ]]; then
         reset_adaptive_services
-        configure_limits token
+        configure_limits "$ADAPTIVE_START_ALGORITHM"
       elif [[ "$mode" == "static_token" ]]; then
         configure_limits token
       else
@@ -618,55 +682,40 @@ for scenario in "${scenarios[@]}"; do
         timeline_pid="$!"
       fi
 
-      wait_until_elapsed "$PHASE_SECONDS" || {
-        echo "Phase boundary timeout scenario=$scenario mode=$mode repeat=$repeat phase=normal" >&2
-        rm -f "$before_c_hist" "$timeline_tmp"
-        exit 1
-      }
-      after_c="$(curl_call "$C_URL/actuator/prometheus")"
-      after_a="$(curl_call "$A_URL/actuator/prometheus")"
-      after_c_hist="$(mktemp)"
-      printf '%s\n' "$after_c" >"$after_c_hist"
-      phase_end_alg="$(algorithm_from_json "$(curl_call "$C_URL/config/limits")")"
-      append_phase_row "$scenario" "$mode" "$repeat" 1 "normal" "$PHASE_SECONDS" \
-        "$phase_start_alg" "$phase_end_alg" "$before_c" "$before_a" "$before_c_hist" "$after_c" "$after_a" "$after_c_hist"
-      rm -f "$before_c_hist"
-      before_c="$after_c"
-      before_a="$after_a"
-      before_c_hist="$after_c_hist"
-      phase_start_alg="$phase_end_alg"
+      local_phase_count="${#ACTIVE_PHASE_NAMES[@]}"
+      for phase_index in "${!ACTIVE_PHASE_NAMES[@]}"; do
+        phase_order=$(( phase_index + 1 ))
+        phase_name="${ACTIVE_PHASE_NAMES[$phase_index]}"
+        target_elapsed=$(( PHASE_SECONDS * phase_order ))
 
-      wait_until_elapsed "$(( PHASE_SECONDS * 2 ))" || {
-        echo "Phase boundary timeout scenario=$scenario mode=$mode repeat=$repeat phase=attack" >&2
-        rm -f "$before_c_hist" "$timeline_tmp"
-        exit 1
-      }
-      after_c="$(curl_call "$C_URL/actuator/prometheus")"
-      after_a="$(curl_call "$A_URL/actuator/prometheus")"
-      after_c_hist="$(mktemp)"
-      printf '%s\n' "$after_c" >"$after_c_hist"
-      phase_end_alg="$(algorithm_from_json "$(curl_call "$C_URL/config/limits")")"
-      append_phase_row "$scenario" "$mode" "$repeat" 2 "attack" "$PHASE_SECONDS" \
-        "$phase_start_alg" "$phase_end_alg" "$before_c" "$before_a" "$before_c_hist" "$after_c" "$after_a" "$after_c_hist"
-      rm -f "$before_c_hist"
-      before_c="$after_c"
-      before_a="$after_a"
-      before_c_hist="$after_c_hist"
-      phase_start_alg="$phase_end_alg"
+        if (( phase_order < local_phase_count )); then
+          wait_until_elapsed "$target_elapsed" || {
+            echo "Phase boundary timeout scenario=$scenario mode=$mode repeat=$repeat phase=$phase_name" >&2
+            rm -f "$before_c_hist" "$timeline_tmp"
+            exit 1
+          }
+        else
+          wait_test_finished || {
+            echo "Test timeout scenario=$scenario mode=$mode repeat=$repeat" >&2
+            rm -f "$before_c_hist" "$timeline_tmp"
+            exit 1
+          }
+        fi
 
-      wait_test_finished || {
-        echo "Test timeout scenario=$scenario mode=$mode repeat=$repeat" >&2
-        rm -f "$before_c_hist" "$timeline_tmp"
-        exit 1
-      }
-      after_c="$(curl_call "$C_URL/actuator/prometheus")"
-      after_a="$(curl_call "$A_URL/actuator/prometheus")"
-      after_c_hist="$(mktemp)"
-      printf '%s\n' "$after_c" >"$after_c_hist"
-      phase_end_alg="$(algorithm_from_json "$(curl_call "$C_URL/config/limits")")"
-      append_phase_row "$scenario" "$mode" "$repeat" 3 "recovery" "$PHASE_SECONDS" \
-        "$phase_start_alg" "$phase_end_alg" "$before_c" "$before_a" "$before_c_hist" "$after_c" "$after_a" "$after_c_hist"
-      rm -f "$before_c_hist" "$after_c_hist"
+        after_c="$(curl_call "$C_URL/actuator/prometheus")"
+        after_a="$(curl_call "$A_URL/actuator/prometheus")"
+        after_c_hist="$(mktemp)"
+        printf '%s\n' "$after_c" >"$after_c_hist"
+        phase_end_alg="$(algorithm_from_json "$(curl_call "$C_URL/config/limits")")"
+        append_phase_row "$scenario" "$mode" "$repeat" "$phase_order" "$phase_name" "$PHASE_SECONDS" \
+          "$phase_start_alg" "$phase_end_alg" "$before_c" "$before_a" "$before_c_hist" "$after_c" "$after_a" "$after_c_hist"
+        rm -f "$before_c_hist"
+        before_c="$after_c"
+        before_a="$after_a"
+        before_c_hist="$after_c_hist"
+        phase_start_alg="$phase_end_alg"
+      done
+      rm -f "$after_c_hist"
 
       if [[ "$mode" == "adaptive" ]]; then
         wait "$timeline_pid"

@@ -1,0 +1,2 @@
+mode,total_requests,forwarded,rejected,success_percent,reject_percent,weighted_avg_latency_ms,weighted_p95_latency_ms
+adaptive_soak,186290,92879,93411,49.86,50.14,2.315,6.164

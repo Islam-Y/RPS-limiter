@@ -1,0 +1,4 @@
+mode,total_requests,forwarded,rejected,success_percent,reject_percent,weighted_avg_latency_ms,weighted_p95_latency_ms
+adaptive,46502,33010,13492,70.99,29.01,3.161,6.881
+static_sliding,45989,15437,30552,33.57,66.43,1.511,3.262
+static_token,35974,25131,10843,69.86,30.14,3.146,6.987

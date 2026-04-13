@@ -42,7 +42,7 @@ T_CRIT_95 = {
     30: 2.042,
 }
 
-SCENARIO_ORDER = ["phase_burst_recovery", "phase_ddos_recovery"]
+SCENARIO_ORDER = ["phase_burst_recovery", "phase_ddos_recovery", "phase_universal_mix"]
 MODE_ORDER = ["static_token", "adaptive", "static_sliding"]
 PHASE_ORDER = ["normal", "attack", "recovery"]
 
@@ -133,6 +133,13 @@ def ordered(items: Iterable[str], order: List[str]) -> List[str]:
     known = [item for item in order if item in items]
     rest = sorted(item for item in items if item not in order)
     return known + rest
+
+
+def ordered_index(value: str, order: List[str]) -> tuple[int, str]:
+    try:
+        return (order.index(value), value)
+    except ValueError:
+        return (len(order), value)
 
 
 def dominant_algorithm(row: dict) -> str:
@@ -228,8 +235,19 @@ def main() -> None:
                 }
             )
 
-    summary_rows.sort(key=lambda row: (SCENARIO_ORDER.index(row["scenario"]), row["phase_order"], MODE_ORDER.index(row["mode"])))
-    switch_summary_rows.sort(key=lambda row: (SCENARIO_ORDER.index(row["scenario"]), MODE_ORDER.index(row["mode"])))
+    summary_rows.sort(
+        key=lambda row: (
+            ordered_index(row["scenario"], SCENARIO_ORDER),
+            row["phase_order"],
+            ordered_index(row["mode"], MODE_ORDER),
+        )
+    )
+    switch_summary_rows.sort(
+        key=lambda row: (
+            ordered_index(row["scenario"], SCENARIO_ORDER),
+            ordered_index(row["mode"], MODE_ORDER),
+        )
+    )
 
     write_csv(
         args.summary_csv,

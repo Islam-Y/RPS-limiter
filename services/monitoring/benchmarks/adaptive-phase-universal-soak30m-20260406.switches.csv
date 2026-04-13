@@ -1,0 +1,2 @@
+scenario,mode,repeat,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+phase_universal_mix,static_token,1,0,1800,0,0,0,0:token

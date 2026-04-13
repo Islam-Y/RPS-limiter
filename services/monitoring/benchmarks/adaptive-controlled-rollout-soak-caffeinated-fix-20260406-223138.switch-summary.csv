@@ -1,0 +1,2 @@
+mode,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+adaptive_soak,7,949,754,0,0,0:sliding|312:token|1152:sliding|1494:token|1555:sliding|1626:token|1686:sliding|1756:token
