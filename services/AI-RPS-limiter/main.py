@@ -99,6 +99,7 @@ MIN_TOKEN_FILL_RATE = float(os.getenv("MIN_TOKEN_FILL_RATE", "5"))
 TOKEN_SMOOTH_CAPACITY_SECONDS = float(
     os.getenv("TOKEN_SMOOTH_CAPACITY_SECONDS", "1.5")
 )
+TOKEN_DDOS_CAPACITY_SECONDS = float(os.getenv("TOKEN_DDOS_CAPACITY_SECONDS", "2.0"))
 RECOVERY_HEADROOM = 1.1
 TOKEN_EXIT_UTILIZATION_MAX = 0.95
 TOKEN_EXTREME_OVERLOAD_REJECT_RATE = float(
@@ -719,6 +720,8 @@ def score_algorithms(features: Dict[str, float]) -> Dict[str, float]:
         and features["coefficient_of_variation"] <= 0.25
         and features["load_ratio"] >= 1.25
     )
+    token_burst_pressure = is_token_burst_pressure(features)
+    token_ddos_pressure = is_token_ddos_pressure(features)
     token_extreme_overload = is_token_extreme_overload(features)
 
     steady_signal = clamp01(1.0 - 0.7 * burst_excess - 0.7 * variability)
@@ -758,6 +761,12 @@ def score_algorithms(features: Dict[str, float]) -> Dict[str, float]:
     if token_sustained_overload:
         token_score += 32.0
         sliding_score -= 6.0
+    if token_burst_pressure:
+        token_score += 18.0
+        sliding_score -= 8.0
+    if token_ddos_pressure:
+        token_score += 24.0
+        sliding_score -= 20.0
     if token_extreme_overload:
         token_score += 40.0
         sliding_score -= 18.0
@@ -801,6 +810,32 @@ def is_token_sustained_overload(features: Dict[str, float]) -> bool:
         and 1.35 <= features["peak_to_limit_ratio"] <= 2.0
         and features["coefficient_of_variation"] <= 0.25
         and features["load_ratio"] >= 1.25
+    )
+
+
+def is_token_burst_pressure(features: Dict[str, float]) -> bool:
+    return (
+        features["burst_ratio"] >= 1.4
+        and features["peak_to_limit_ratio"] >= 1.3
+        and features["coefficient_of_variation"] >= 0.35
+        and features["observed_to_limit_ratio"] >= 0.75
+    )
+
+
+def is_token_ddos_pressure(features: Dict[str, float]) -> bool:
+    return (
+        features["peak_to_limit_ratio"] >= 1.5
+        and features["load_ratio"] >= 1.25
+        and (
+            features["burst_ratio"] >= 1.2
+            or features["coefficient_of_variation"] >= 0.25
+            or features["peak_to_limit_ratio"] >= 2.1
+        )
+        and (
+            features["observed_to_limit_ratio"] >= 1.25
+            or features["burst_ratio"] >= 1.45
+            or features["rejected_rate"] >= 0.2
+        )
     )
 
 
@@ -857,8 +892,16 @@ def select_algorithm(
         recommendable_scores.items(), key=lambda item: item[1]
     )
     update_selector_candidate(state, candidate_algorithm)
+    token_burst_pressure = is_token_burst_pressure(features)
+    token_ddos_pressure = is_token_ddos_pressure(features)
     token_burst_fast_path = (
         candidate_algorithm == "token" and is_token_burst_fast_path(features)
+    )
+    candidate_token_burst_pressure = (
+        candidate_algorithm == "token" and token_burst_pressure
+    )
+    token_burst_fast_switch = (
+        current_algorithm != "fixed" and candidate_token_burst_pressure
     )
     token_moderate_overload = (
         candidate_algorithm == "token" and is_token_moderate_overload(features)
@@ -866,8 +909,19 @@ def select_algorithm(
     token_sustained_overload = (
         candidate_algorithm == "token" and is_token_sustained_overload(features)
     )
+    candidate_token_ddos_pressure = (
+        candidate_algorithm == "token" and token_ddos_pressure
+    )
     token_extreme_overload = is_token_extreme_overload(features)
     sliding_starved = is_sliding_starved(features)
+    sliding_attack_escape = (
+        current_algorithm == "sliding"
+        and token_ddos_pressure
+        and (
+            features["rejected_rate"] >= 0.5
+            or features["observed_to_limit_ratio"] >= 1.2
+        )
+    )
 
     current_score = scores.get(current_algorithm, 0.0)
     algo_switch_allowed = ALLOW_ALGO_SWITCH and (
@@ -887,9 +941,9 @@ def select_algorithm(
         return current_algorithm
     if (
         current_algorithm == "sliding"
-        and (sliding_starved or token_extreme_overload)
+        and (sliding_starved or token_extreme_overload or sliding_attack_escape)
         and "token" in RECOMMENDABLE_ALGORITHMS
-        and algo_switch_allowed
+        and ALLOW_ALGO_SWITCH
     ):
         if track_switch_state:
             state.last_algo_switch_at = now
@@ -905,8 +959,10 @@ def select_algorithm(
         effective_margin = min(ALGORITHM_SCORE_MARGIN, ALGORITHM_SCORE_MARGIN_OVERLOAD)
     if (
         token_burst_fast_path
+        or token_burst_fast_switch
         or token_moderate_overload
         or token_sustained_overload
+        or candidate_token_ddos_pressure
         or token_extreme_overload
     ):
         effective_margin = 0.0
@@ -950,7 +1006,12 @@ def select_algorithm(
             1
             if token_burst_fast_path
             else 1
-            if token_moderate_overload or token_sustained_overload
+            if (
+                token_burst_fast_switch
+                or token_moderate_overload
+                or token_sustained_overload
+                or candidate_token_ddos_pressure
+            )
             else max(1, SELECTOR_STREAK_REQUIRED)
         )
     )
@@ -959,7 +1020,9 @@ def select_algorithm(
         current_algorithm == "token"
         and candidate_algorithm != "token"
         and (
-            features["rejected_rate"] >= 0.2
+            token_burst_pressure
+            or token_ddos_pressure
+            or features["rejected_rate"] >= 0.2
             or features["observed_to_limit_ratio"] >= 1.2
             or features["peak_to_limit_ratio"] >= DDOS_MULTIPLIER
         )
@@ -1087,6 +1150,7 @@ def recommend_config(
     predicted_spike_recovery = predicted_spike and not overload and is_stable_recovery_window(
         telemetry
     )
+    token_ddos_pressure = is_token_ddos_pressure(telemetry)
     token_extreme_overload = is_token_extreme_overload(telemetry)
     sliding_starved = is_sliding_starved(telemetry)
     target_rps = current_limit
@@ -1148,10 +1212,16 @@ def recommend_config(
             current_config.algorithm == "token"
             and telemetry["rejected_rate"] >= 0.15
             and telemetry["burst_ratio"] < 1.8
+            and not token_ddos_pressure
         ):
             token_capacity_seconds = min(
                 TOKEN_CAPACITY_SECONDS,
                 max(1.0, TOKEN_SMOOTH_CAPACITY_SECONDS),
+            )
+        elif token_ddos_pressure:
+            token_capacity_seconds = max(
+                TOKEN_CAPACITY_SECONDS,
+                TOKEN_DDOS_CAPACITY_SECONDS,
             )
         keep_token_floor = (
             current_config.algorithm != "token"
@@ -1166,6 +1236,13 @@ def recommend_config(
                     current_limit,
                     telemetry["allowed_rps"] + telemetry["rejected_rps"] * TOKEN_OVERLOAD_GAIN,
                     telemetry["observed_rps"] * 0.5,
+                )
+            elif token_ddos_pressure:
+                target_rps = max(
+                    target_rps,
+                    current_limit,
+                    telemetry["allowed_rps"] + telemetry["rejected_rps"] * TOKEN_OVERLOAD_GAIN,
+                    telemetry["observed_rps"] * 0.85,
                 )
             elif current_config.algorithm == "token" and telemetry["rejected_rate"] > 0.0:
                 target_rps = max(

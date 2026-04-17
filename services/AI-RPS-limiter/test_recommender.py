@@ -44,6 +44,7 @@ class RecommenderSelectorTest(unittest.TestCase):
             "DECREASE_FACTOR": ai.DECREASE_FACTOR,
             "TOKEN_OVERLOAD_GAIN": ai.TOKEN_OVERLOAD_GAIN,
             "TOKEN_SMOOTH_CAPACITY_SECONDS": ai.TOKEN_SMOOTH_CAPACITY_SECONDS,
+            "TOKEN_DDOS_CAPACITY_SECONDS": ai.TOKEN_DDOS_CAPACITY_SECONDS,
             "RECOVERY_HEADROOM": ai.RECOVERY_HEADROOM,
             "TOKEN_EXIT_UTILIZATION_MAX": ai.TOKEN_EXIT_UTILIZATION_MAX,
             "TOKEN_EXTREME_OVERLOAD_REJECT_RATE": ai.TOKEN_EXTREME_OVERLOAD_REJECT_RATE,
@@ -67,6 +68,7 @@ class RecommenderSelectorTest(unittest.TestCase):
         ai.DECREASE_FACTOR = 0.7
         ai.TOKEN_OVERLOAD_GAIN = 0.35
         ai.TOKEN_SMOOTH_CAPACITY_SECONDS = 1.5
+        ai.TOKEN_DDOS_CAPACITY_SECONDS = 2.0
         ai.RECOVERY_HEADROOM = 1.1
         ai.TOKEN_EXIT_UTILIZATION_MAX = 0.95
         ai.TOKEN_EXTREME_OVERLOAD_REJECT_RATE = 0.9
@@ -453,7 +455,7 @@ class RecommenderSelectorTest(unittest.TestCase):
         # Assert
         self.assertEqual("token", recommendation.algorithm)
         self.assertEqual(183.048, recommendation.fillRate)
-        self.assertEqual(275, recommendation.capacity)
+        self.assertEqual(367, recommendation.capacity)
 
     def test_holds_token_in_recovery_until_sliding_has_headroom(self):
         # Arrange
@@ -713,6 +715,156 @@ class RecommenderSelectorTest(unittest.TestCase):
         self.assertEqual("token", recommendation.algorithm)
         self.assertAlmostEqual(109.871, recommendation.fillRate, places=2)
         self.assertEqual(220, recommendation.capacity)
+
+    def test_keeps_token_for_managed_ddos_pressure_after_rejects_drop(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc)
+        )
+        history = make_points([208, 226, 240, 182, 180])
+        request = ai.LimitConfigRequest(
+            observedRps=182.113,
+            allowedRps=179.329,
+            rejectedRps=2.783,
+            rejectedRate=0.015,
+            peakRps1s=291.0,
+            burstRatio=1.598,
+            coefficientOfVariation=0.457,
+            latencyP95=0.071,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=347,
+                fillRate=173.357,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            238.395,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=70),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(199.361, recommendation.fillRate, places=3)
+        self.assertEqual(399, recommendation.capacity)
+
+    def test_keeps_token_for_burst_pressure_without_rejects(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc)
+        )
+        history = make_points([194, 210, 224, 222, 220])
+        request = ai.LimitConfigRequest(
+            observedRps=221.697,
+            allowedRps=221.697,
+            rejectedRps=0.0,
+            rejectedRate=0.0,
+            peakRps1s=340.0,
+            burstRatio=1.534,
+            coefficientOfVariation=0.433,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=484,
+                fillRate=241.604,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            236.032,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=119),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(241.604, recommendation.fillRate, places=3)
+        self.assertEqual(484, recommendation.capacity)
+
+    def test_prefers_token_from_sliding_for_ddos_pressure_before_extreme_threshold(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState()
+        history = make_points([180, 200, 249, 230, 220])
+        request = ai.LimitConfigRequest(
+            observedRps=249.263,
+            allowedRps=30.564,
+            rejectedRps=218.699,
+            rejectedRate=0.877,
+            peakRps1s=320.0,
+            burstRatio=1.284,
+            coefficientOfVariation=0.265,
+            latencyP95=0.071,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="sliding",
+                limit=1614,
+                window=10,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            237.507,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(211.874, recommendation.fillRate, places=3)
+        self.assertEqual(424, recommendation.capacity)
+
+    def test_breaks_sliding_cooldown_for_token_ddos_pressure(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc)
+        )
+        history = make_points([240, 252, 263, 247, 205])
+        request = ai.LimitConfigRequest(
+            observedRps=263.433,
+            allowedRps=3.167,
+            rejectedRps=260.266,
+            rejectedRate=0.988,
+            peakRps1s=320.0,
+            burstRatio=1.215,
+            coefficientOfVariation=0.26,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="sliding",
+                limit=2055,
+                window=10,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            240.538,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=40),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(223.918, recommendation.fillRate, places=3)
+        self.assertEqual(448, recommendation.capacity)
 
     def test_keeps_token_under_peak_pressure_even_when_sliding_scores_higher(self):
         # Arrange

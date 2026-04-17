@@ -86,6 +86,35 @@ Grafana UI: http://localhost:3000 (default: admin/admin)
 ### Service A (load‑generator)
 - `LOADGEN_CONFIG_FILE` (опционально, автозапуск теста)
 
+### 6.1 Подтвержденный adaptive-профиль
+Ниже приведен профиль, подтвержденный контрольными прогонами 17 апреля 2026 года. Это текущая рекомендуемая база для локального стенда и controlled rollout.
+
+Service C:
+- `RATE_LIMIT_ALGORITHM=sliding`
+- `ADAPTIVE_ENABLED=true`
+- `ADAPTIVE_APPLY_RECOMMENDATIONS=false` по умолчанию
+- `ADAPTIVE_INTERVAL=10s`
+
+AI-module:
+- `RECOMMENDABLE_ALGORITHMS=sliding,token`
+- `ALLOW_ALGO_SWITCH=true`
+- `MIN_ALGO_SWITCH_INTERVAL_SECONDS=60`
+- `TOKEN_MIN_HOLD_SECONDS=60`
+- `TOKEN_EXIT_NON_BURST_STREAK=3`
+- `SELECTOR_STREAK_REQUIRED=3`
+- `FIXED_ESCAPE_STREAK_REQUIRED=2`
+- `TOKEN_OVERLOAD_GAIN=0.30`
+- `TOKEN_SMOOTH_CAPACITY_SECONDS=1.2`
+- `LATENCY_P95_THRESHOLD=0.06`
+- `ALGORITHM_SCORE_MARGIN=12`
+- `ALGORITHM_SCORE_MARGIN_OVERLOAD=5`
+
+Что означает этот профиль:
+- `fixed` исключен из adaptive-пула и нужен только для ручных тестов и benchmark-сравнения;
+- в штатном режиме и в recovery базовым алгоритмом остается `sliding`;
+- под burst/ddos adaptive должен уходить в `token`;
+- возврат из `token` в `sliding` допустим только после устойчивого recovery, а не по одиночному окну со сниженным `rejectedRate`.
+
 ## 7. Пошаговое локальное тестирование (curl + Postman)
 Ниже — полный минимально-достаточный тест-план для функциональности из `specification.md`.
 
@@ -489,9 +518,92 @@ bash scripts/adaptive_phase_benchmark.sh \
 Важно:
 - для mixed-benchmark длина фазы должна быть не меньше 2 интервалов adaptive polling, иначе контур физически не успеет среагировать;
 - при текущем `ADAPTIVE_INTERVAL=10s` технический минимум — `phase-seconds=20`, но для репрезентативного прогона лучше оставлять `phase-seconds=30`.
-- текущий `docker-compose.yml` уже использует latency-aware профиль для mixed workload: `TOKEN_OVERLOAD_GAIN=0.30`, `TOKEN_SMOOTH_CAPACITY_SECONDS=1.2`, `LATENCY_P95_THRESHOLD=0.06`.
+- текущий `docker-compose.yml` должен соответствовать подтвержденному adaptive-профилю из раздела `6.1`, а не произвольному набору tuning-параметров.
 
-Итог приемки: тесты из этапов 1-12 закрывают health, API, алгоритмы, профили нагрузки, 429-логику, fail-open/recovery, AI, проксирование методов, мониторинг и количественное сравнение алгоритмов.
+### 7.14 Этап 13 — controlled rollout adaptive apply (`ddos -> recovery`)
+Цель: проверить не только рекомендации в shadow mode, но и реальное переключение `sliding -> token -> sliding` под фазовой нагрузкой.
+
+Включение apply mode:
+```bash
+ADAPTIVE_APPLY_RECOMMENDATIONS=true docker compose up -d rate-limiter-service
+curl -s "$C_URL/actuator/prometheus" | grep '^ratelimiter_adaptive_apply_enabled'
+```
+
+Запуск контрольного phased-теста:
+```bash
+curl -X POST "$C_URL/config/limits" \
+  -H 'Content-Type: application/json' \
+  -d '{"algorithm":"sliding","limit":1000,"window":10,"capacity":200,"fillRate":100}'
+
+curl -X POST "$A_URL/test/start" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "targetUrl": "http://rate-limiter-service:8082/api/test",
+    "duration": "PT360S",
+    "concurrency": 256,
+    "profile": {
+      "type": "phased",
+      "params": {
+        "phases": [
+          {
+            "name": "ddos",
+            "duration": "PT180S",
+            "type": "ddos",
+            "params": {
+              "minRps": 35,
+              "maxRps": 320,
+              "maxSpikeDuration": "PT2S",
+              "minIdleTime": "PT0S",
+              "maxIdleTime": "PT1S"
+            }
+          },
+          {
+            "name": "recovery",
+            "duration": "PT180S",
+            "type": "constant",
+            "params": { "rps": 40 }
+          }
+        ]
+      }
+    }
+  }'
+```
+
+Наблюдение во время прогона:
+```bash
+watch -n 5 "curl -s '$C_URL/config/limits'"
+```
+
+Дополнительно можно следить за adaptive-метриками:
+```bash
+curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_adaptive_(apply_enabled|recommendations_total|recommendations_by_algorithm_total|recommended_algorithm)'
+```
+
+Ожидание:
+- в фазе `ddos` активный конфиг должен перейти из `sliding` в `token`;
+- в фазе `recovery` контур должен вернуться в `sliding`;
+- для короткого контрольного прогона `180s + 180s` нормальная последовательность — `sliding -> token -> sliding` без частых лишних переключений.
+
+Подтвержденные артефакты от 17 апреля 2026 года:
+- неудачный baseline до исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-135103.phases.csv`
+  - `ddos success = 41.60%`
+  - `recovery success = 100.00%`
+- контрольный короткий прогон после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-142435-burstguard.phases.csv`
+  - `ddos success = 91.64%`
+  - `recovery success = 100.00%`
+  - `switch_count = 2`
+- длинный soak после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-143110-burstguard-full.phases.csv`
+  - `ddos success = 81.86%`
+  - `recovery success = 100.00%`
+  - `switch_count = 10`
+
+Возврат к безопасному режиму после теста:
+```bash
+ADAPTIVE_APPLY_RECOMMENDATIONS=false docker compose up -d rate-limiter-service
+curl -s "$C_URL/actuator/prometheus" | grep '^ratelimiter_adaptive_apply_enabled'
+```
+
+Итог приемки: тесты из этапов 1-13 закрывают health, API, алгоритмы, профили нагрузки, 429-логику, fail-open/recovery, AI, проксирование методов, мониторинг, controlled rollout adaptive и количественное сравнение алгоритмов.
 
 ## 8. Мониторинг (Prometheus + Grafana)
 Единый конфиг Prometheus: `monitoring/prometheus.yml`.
@@ -505,7 +617,7 @@ Grafana (примеры запросов):
 - Loadgen RPS: `loadgen_current_rps`
 
 ## 9. Тест‑кейсы системы
-Сценарии и критерии для приемки полностью расписаны в разделе 7 (`7.1`–`7.13`) и покрывают:
+Сценарии и критерии для приемки полностью расписаны в разделе 7 (`7.1`–`7.14`) и покрывают:
 - Service A: управление тестами и все профили нагрузки.
 - Service B: доступность и обработку проксируемого трафика.
 - Service C: конфигурирование, алгоритмы, 2xx/429, fail-open и восстановление после Redis.
@@ -519,6 +631,7 @@ Grafana (примеры запросов):
 - Нет метрик: проверьте `/actuator/prometheus` и конфиг Prometheus.
 - Redis недоступен: Service C переходит в fail‑open (ожидаемо).
 - AI модуль недоступен: Service C продолжает с последними лимитами.
+- Adaptive слишком часто переключается между `token` и `sliding`: сначала сверить фактические env-параметры с подтвержденным профилем из раздела `6.1`, затем проверить `ratelimiter_adaptive_recommendations_by_algorithm_total` и timeline фазового прогона.
 
 ## 11. Остановка
 - Локально: `Ctrl+C` в терминалах сервисов.
