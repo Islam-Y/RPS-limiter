@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import ru.itmo.rate_limiter_service.config.RateLimiterProperties;
+import ru.itmo.rate_limiter_service.metrics.RateLimiterMetrics;
 import ru.itmo.rate_limiter_service.model.Algorithm;
 import ru.itmo.rate_limiter_service.model.RateLimiterConfig;
 import ru.itmo.rate_limiter_service.model.RateLimiterConfigPayload;
@@ -33,11 +34,13 @@ public class RateLimiterConfigService {
 	private final RateLimiterProperties properties;
 	private final StringRedisTemplate redisTemplate;
 	private final ObjectMapper objectMapper;
+	private final RateLimiterMetrics metrics;
 	private final AtomicReference<RateLimiterConfig> current = new AtomicReference<>();
 
 	@PostConstruct
 	public void init() {
 		current.set(defaultConfig());
+		metrics.recordConfigApplied(current.get(), "startup");
 		loadFromRedis();
 	}
 
@@ -54,10 +57,12 @@ public class RateLimiterConfigService {
 			}
 			if (base.getAlgorithm() != loaded.getAlgorithm()) {
 				resetRedisState();
+				metrics.recordAlgorithmSwitch(base.getAlgorithm(), loaded.getAlgorithm(), "redis");
 				log.info("Switched rate-limiting algorithm from {} to {} (source=redis)",
 					base.getAlgorithm(), loaded.getAlgorithm());
 			}
 			current.set(loaded);
+			metrics.recordConfigApplied(loaded, "redis");
 			log.info("Refreshed rate limiter config from Redis: algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
 				loaded.getAlgorithm(), loaded.getLimit(), loaded.getWindowSeconds(),
 				loaded.getCapacity(), loaded.getFillRate());
@@ -76,6 +81,7 @@ public class RateLimiterConfigService {
 				return;
 			}
 			current.set(loaded);
+			metrics.recordConfigApplied(loaded, "redis");
 			log.info("Loaded rate limiter config from Redis: algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
 				loaded.getAlgorithm(), loaded.getLimit(), loaded.getWindowSeconds(),
 				loaded.getCapacity(), loaded.getFillRate());
@@ -94,11 +100,13 @@ public class RateLimiterConfigService {
 		RateLimiterConfig updated = resolveConfig(payload, base, requireAllFields);
 		if (base.getAlgorithm() != updated.getAlgorithm()) {
 			resetRedisState();
+			metrics.recordAlgorithmSwitch(base.getAlgorithm(), updated.getAlgorithm(), source);
 			log.info("Switched rate-limiting algorithm from {} to {} (source={})",
 				base.getAlgorithm(), updated.getAlgorithm(), source);
 		}
 		persistConfig(updated);
 		current.set(updated);
+		metrics.recordConfigApplied(updated, source);
 		log.info("Applied rate limiter config (source={}): algorithm={}, limit={}, window={}, capacity={}, fillRate={}",
 			source, updated.getAlgorithm(), updated.getLimit(), updated.getWindowSeconds(),
 			updated.getCapacity(), updated.getFillRate());

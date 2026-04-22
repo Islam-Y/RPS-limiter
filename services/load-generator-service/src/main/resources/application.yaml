@@ -4,7 +4,7 @@ spring:
 
 logging:
   pattern:
-    console: "[%d{yyyy-MM-dd HH:mm:ss.SSS}] [%level] [%logger{36}] - %msg%n"
+    console: "[%d{yyyy-MM-dd HH:mm:ss.SSS}] [%level] [%logger{36}] - %msg%n%wEx"
 
 management:
   endpoints:

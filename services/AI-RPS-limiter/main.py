@@ -37,6 +37,21 @@ logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(message
 
 SUPPORTED_ALGORITHMS = ("fixed", "sliding", "token")
 ALLOWED_ALGORITHMS = set(SUPPORTED_ALGORITHMS)
+TOKEN_PROFILES = ("default", "noisy", "burst", "ddos")
+TOKEN_PROFILE_PRIORITY = {
+    "default": 0,
+    "noisy": 1,
+    "burst": 2,
+    "ddos": 3,
+}
+SELECTOR_SIGNALS = (
+    "token_noisy_overload",
+    "token_burst_pressure",
+    "token_ddos_pressure",
+    "token_extreme_overload",
+    "sliding_starved",
+    "stable_recovery",
+)
 
 
 def parse_algorithm_list(raw_value: str) -> tuple[str, ...]:
@@ -100,6 +115,15 @@ TOKEN_SMOOTH_CAPACITY_SECONDS = float(
     os.getenv("TOKEN_SMOOTH_CAPACITY_SECONDS", "1.5")
 )
 TOKEN_DDOS_CAPACITY_SECONDS = float(os.getenv("TOKEN_DDOS_CAPACITY_SECONDS", "2.0"))
+TOKEN_TUNER_ENABLED = os.getenv("TOKEN_TUNER_ENABLED", "false").lower() == "true"
+TOKEN_TUNER_PROFILE_STREAK = int(os.getenv("TOKEN_TUNER_PROFILE_STREAK", "2"))
+TOKEN_TUNER_NOISY_GAIN = float(os.getenv("TOKEN_TUNER_NOISY_GAIN", "0.55"))
+TOKEN_TUNER_NOISY_TARGET_RATIO = float(
+    os.getenv("TOKEN_TUNER_NOISY_TARGET_RATIO", "0.9")
+)
+TOKEN_TUNER_NOISY_CAPACITY_SECONDS = float(
+    os.getenv("TOKEN_TUNER_NOISY_CAPACITY_SECONDS", "1.35")
+)
 RECOVERY_HEADROOM = 1.1
 TOKEN_EXIT_UTILIZATION_MAX = 0.95
 TOKEN_EXTREME_OVERLOAD_REJECT_RATE = float(
@@ -200,6 +224,25 @@ ALGORITHM_SCORE = Gauge(
     "ai_algorithm_score",
     "Current selector score per algorithm",
     ["algorithm"],
+)
+TOKEN_TUNER_ENABLED_GAUGE = Gauge(
+    "ai_token_tuner_enabled",
+    "Whether token tuner is enabled (1=enabled)",
+)
+TOKEN_PROFILE_ACTIVE = Gauge(
+    "ai_token_profile_active",
+    "Currently active token profile (1=active)",
+    ["profile"],
+)
+RECOMMENDATION_SWITCH_TOTAL = Counter(
+    "ai_recommendation_switch_total",
+    "Total recommendation algorithm switches returned by AI",
+    ["mode", "from_algorithm", "to_algorithm"],
+)
+SELECTOR_SIGNAL_ACTIVE = Gauge(
+    "ai_selector_signal_active",
+    "Whether a selector signal is currently active (1=active)",
+    ["signal"],
 )
 
 
@@ -347,6 +390,9 @@ class RecommendationState:
     token_non_burst_streak: int = 0
     attack_streak: int = 0
     recovery_streak: int = 0
+    token_profile: Optional[str] = None
+    token_profile_candidate: Optional[str] = None
+    token_profile_streak: int = 0
 
 
 def parse_timestamp(value: Optional[Union[str, float, int]]) -> datetime:
@@ -520,6 +566,52 @@ def update_algorithm_gauge(algorithm: str) -> None:
         LAST_ALGORITHM.labels(algorithm=algo).set(1.0 if algo == algorithm else 0.0)
 
 
+def update_token_profile_gauge(profile: Optional[str], algorithm: str) -> None:
+    TOKEN_TUNER_ENABLED_GAUGE.set(1.0 if TOKEN_TUNER_ENABLED else 0.0)
+    active_profile = profile if algorithm == "token" and profile in TOKEN_PROFILES else None
+    for candidate in TOKEN_PROFILES:
+        TOKEN_PROFILE_ACTIVE.labels(profile=candidate).set(
+            1.0 if candidate == active_profile else 0.0
+        )
+
+
+def build_selector_signals(features: Dict[str, float]) -> Dict[str, bool]:
+    return {
+        "token_noisy_overload": is_token_noisy_overload(features),
+        "token_burst_pressure": is_token_burst_pressure(features),
+        "token_ddos_pressure": is_token_ddos_pressure(features),
+        "token_extreme_overload": is_token_extreme_overload(features),
+        "sliding_starved": is_sliding_starved(features),
+        "stable_recovery": is_stable_recovery_window(features),
+    }
+
+
+def update_selector_signal_gauges(
+    selector_signals: Optional[Dict[str, bool]]
+) -> None:
+    active_signals = selector_signals or {}
+    for signal in SELECTOR_SIGNALS:
+        SELECTOR_SIGNAL_ACTIVE.labels(signal=signal).set(
+            1.0 if active_signals.get(signal, False) else 0.0
+        )
+
+
+def record_recommendation_switch(
+    current_algorithm: str, recommendation_algorithm: str, apply_recommendations: bool
+) -> None:
+    if (
+        current_algorithm not in ALLOWED_ALGORITHMS
+        or recommendation_algorithm not in ALLOWED_ALGORITHMS
+        or current_algorithm == recommendation_algorithm
+    ):
+        return
+    RECOMMENDATION_SWITCH_TOTAL.labels(
+        mode="apply" if apply_recommendations else "shadow",
+        from_algorithm=current_algorithm,
+        to_algorithm=recommendation_algorithm,
+    ).inc()
+
+
 def update_metrics(
     request: LimitConfigRequest,
     predicted_rps: float,
@@ -527,6 +619,8 @@ def update_metrics(
     history_len: int,
     result: str,
     algorithm_scores: Optional[Dict[str, float]] = None,
+    token_profile: Optional[str] = None,
+    selector_signals: Optional[Dict[str, bool]] = None,
 ) -> None:
     REQUESTS_TOTAL.labels(result=result).inc()
     allowed_rps = (
@@ -560,6 +654,8 @@ def update_metrics(
     if rec_rps is not None:
         LAST_RECOMMENDED_RPS.set(float(rec_rps))
     update_algorithm_gauge(recommendation.algorithm)
+    update_token_profile_gauge(token_profile, recommendation.algorithm)
+    update_selector_signal_gauges(selector_signals)
 
     if recommendation.algorithm in ("fixed", "sliding"):
         LAST_RECOMMENDED_LIMIT.set(float(recommendation.limit or 0))
@@ -591,6 +687,7 @@ def update_metrics_from_response(
     predicted_rps: Optional[float],
     history_len: Optional[int],
     result: str,
+    token_profile: Optional[str] = None,
 ) -> None:
     REQUESTS_TOTAL.labels(result=result).inc()
     set_gauge_value(LAST_OBSERVED_RPS, observed_rps)
@@ -609,6 +706,8 @@ def update_metrics_from_response(
     rec_rps = recommendation_rps(recommendation)
     set_gauge_value(LAST_RECOMMENDED_RPS, rec_rps)
     update_algorithm_gauge(recommendation.algorithm)
+    update_token_profile_gauge(token_profile, recommendation.algorithm)
+    update_selector_signal_gauges(None)
 
     if recommendation.algorithm in ("fixed", "sliding"):
         LAST_RECOMMENDED_LIMIT.set(float(recommendation.limit or 0))
@@ -848,6 +947,78 @@ def is_token_extreme_overload(features: Dict[str, float]) -> bool:
     )
 
 
+def is_token_noisy_overload(features: Dict[str, float]) -> bool:
+    return (
+        0.15 <= features["rejected_rate"] <= 0.45
+        and 1.0 <= features["burst_ratio"] <= 1.35
+        and 0.15 <= features["coefficient_of_variation"] <= 0.45
+        and 1.15 <= features["peak_to_limit_ratio"] <= 1.45
+        and 1.05 <= features["load_ratio"] <= 1.4
+    )
+
+
+def desired_token_profile(
+    current_algorithm: str, features: Dict[str, float]
+) -> str:
+    if is_token_extreme_overload(features) or is_token_ddos_pressure(features):
+        return "ddos"
+    if is_token_burst_fast_path(features) or is_token_burst_pressure(features):
+        return "burst"
+    if current_algorithm == "token" and is_token_noisy_overload(features):
+        return "noisy"
+    return "default"
+
+
+def resolve_token_profile(
+    state: RecommendationState,
+    current_algorithm: str,
+    desired_algorithm: str,
+    features: Dict[str, float],
+) -> Optional[str]:
+    if desired_algorithm != "token":
+        state.token_profile = None
+        state.token_profile_candidate = None
+        state.token_profile_streak = 0
+        return None
+
+    desired_profile = desired_token_profile(current_algorithm, features)
+    if current_algorithm != "token" or state.token_profile is None:
+        state.token_profile = desired_profile
+        state.token_profile_candidate = None
+        state.token_profile_streak = 0
+        return desired_profile
+
+    active_profile = state.token_profile
+    if desired_profile == active_profile:
+        state.token_profile_candidate = None
+        state.token_profile_streak = 0
+        return active_profile
+
+    active_priority = TOKEN_PROFILE_PRIORITY.get(active_profile, 0)
+    desired_priority = TOKEN_PROFILE_PRIORITY.get(desired_profile, 0)
+    required_streak = 1 if desired_priority > active_priority else max(
+        1, TOKEN_TUNER_PROFILE_STREAK
+    )
+    if desired_priority < active_priority:
+        if active_profile == "ddos":
+            required_streak = max(required_streak, 4)
+        elif active_profile == "burst":
+            required_streak = max(required_streak, 3)
+    if state.token_profile_candidate == desired_profile:
+        state.token_profile_streak += 1
+    else:
+        state.token_profile_candidate = desired_profile
+        state.token_profile_streak = 1
+
+    if state.token_profile_streak >= required_streak:
+        state.token_profile = desired_profile
+        state.token_profile_candidate = None
+        state.token_profile_streak = 0
+        return desired_profile
+
+    return active_profile
+
+
 def is_stable_recovery_window(features: Dict[str, float]) -> bool:
     latency_recovered = features["latency_p95"] <= LATENCY_P95_THRESHOLD or (
         features["rejected_rate"] <= 0.0
@@ -872,6 +1043,20 @@ def is_sliding_starved(features: Dict[str, float]) -> bool:
     )
 
 
+def is_sliding_rebalance_window(features: Dict[str, float]) -> bool:
+    has_overload_signal = (
+        features["rejected_rate"] >= REJECTED_RATE_THRESHOLD
+        or features["latency_p95"] >= LATENCY_P95_THRESHOLD
+        or features["errors_5xx"] >= ERRORS_5XX_THRESHOLD > 0
+    )
+    return (
+        has_overload_signal
+        and features["burst_ratio"] <= 1.25
+        and features["peak_to_limit_ratio"] <= 1.4
+        and features["coefficient_of_variation"] >= 0.25
+    )
+
+
 def select_algorithm(
     current_algorithm: str,
     scores: Dict[str, float],
@@ -892,6 +1077,7 @@ def select_algorithm(
         recommendable_scores.items(), key=lambda item: item[1]
     )
     update_selector_candidate(state, candidate_algorithm)
+    token_noisy_overload = is_token_noisy_overload(features)
     token_burst_pressure = is_token_burst_pressure(features)
     token_ddos_pressure = is_token_ddos_pressure(features)
     token_burst_fast_path = (
@@ -914,6 +1100,7 @@ def select_algorithm(
     )
     token_extreme_overload = is_token_extreme_overload(features)
     sliding_starved = is_sliding_starved(features)
+    sliding_rebalance_window = is_sliding_rebalance_window(features)
     sliding_attack_escape = (
         current_algorithm == "sliding"
         and token_ddos_pressure
@@ -921,6 +1108,13 @@ def select_algorithm(
             features["rejected_rate"] >= 0.5
             or features["observed_to_limit_ratio"] >= 1.2
         )
+    )
+    sliding_noisy_escape = (
+        current_algorithm == "sliding"
+        and token_noisy_overload
+        and features["rejected_rate"] >= 0.2
+        and features["observed_rps"] >= MIN_SWITCH_TRAFFIC_RPS
+        and features["observed_to_limit_ratio"] >= 1.05
     )
 
     current_score = scores.get(current_algorithm, 0.0)
@@ -941,7 +1135,12 @@ def select_algorithm(
         return current_algorithm
     if (
         current_algorithm == "sliding"
-        and (sliding_starved or token_extreme_overload or sliding_attack_escape)
+        and (
+            sliding_starved
+            or token_extreme_overload
+            or sliding_attack_escape
+            or sliding_noisy_escape
+        )
         and "token" in RECOMMENDABLE_ALGORITHMS
         and ALLOW_ALGO_SWITCH
     ):
@@ -1041,8 +1240,8 @@ def select_algorithm(
             return current_algorithm
         if (
             candidate_algorithm == "sliding"
-            and is_stable_recovery_window(features)
             and not token_recovery_ready
+            and not sliding_rebalance_window
         ):
             return current_algorithm
     if algo_switch_allowed and selector_confident:
@@ -1103,6 +1302,28 @@ def configs_equal(current: LimitConfigIn, recommended: LimitConfigResponse) -> b
         int(current.capacity) == recommended.capacity
         and abs(float(current.fillRate) - float(recommended.fillRate)) < 1e-6
     )
+
+
+def config_change_ratio(current: LimitConfigIn, recommended: LimitConfigResponse) -> float:
+    if current.algorithm != recommended.algorithm:
+        return 1.0
+    if current.algorithm in ("fixed", "sliding"):
+        current_limit = current_rps_limit(current)
+        recommended_limit = recommendation_rps(recommended)
+        if recommended_limit is None:
+            return 0.0
+        return safe_ratio(abs(recommended_limit - current_limit), current_limit, 0.0)
+    current_fill_rate = float(current.fillRate or 0.0)
+    current_capacity = float(current.capacity or 0.0)
+    recommended_fill_rate = float(recommended.fillRate or 0.0)
+    recommended_capacity = float(recommended.capacity or 0.0)
+    fill_rate_change = safe_ratio(
+        abs(recommended_fill_rate - current_fill_rate), current_fill_rate, 0.0
+    )
+    capacity_change = safe_ratio(
+        abs(recommended_capacity - current_capacity), current_capacity, 0.0
+    )
+    return max(fill_rate_change, capacity_change)
 
 
 def recommend_config(
@@ -1206,6 +1427,12 @@ def recommend_config(
         now,
         apply_recommendations,
     )
+    token_profile = resolve_token_profile(
+        state,
+        current_config.algorithm,
+        desired_algorithm,
+        telemetry,
+    )
     token_capacity_seconds = None
     if desired_algorithm == "token":
         if (
@@ -1278,6 +1505,26 @@ def recommend_config(
                 telemetry["observed_rps"] * RECOVERY_HEADROOM,
             )
 
+    if desired_algorithm == "token" and TOKEN_TUNER_ENABLED:
+        if token_profile == "ddos":
+            token_capacity_seconds = max(
+                token_capacity_seconds or TOKEN_CAPACITY_SECONDS,
+                TOKEN_DDOS_CAPACITY_SECONDS,
+            )
+        elif token_profile == "noisy":
+            target_rps = max(
+                target_rps,
+                current_limit,
+                telemetry["allowed_rps"]
+                + telemetry["rejected_rps"] * TOKEN_TUNER_NOISY_GAIN,
+                telemetry["observed_rps"] * TOKEN_TUNER_NOISY_TARGET_RATIO,
+            )
+            target_rps = clamp(target_rps, MIN_RPS, max_rps)
+            token_capacity_seconds = min(
+                token_capacity_seconds or TOKEN_CAPACITY_SECONDS,
+                TOKEN_TUNER_NOISY_CAPACITY_SECONDS,
+            )
+
     recommendation = build_response(
         desired_algorithm,
         target_rps,
@@ -1286,9 +1533,7 @@ def recommend_config(
         token_capacity_seconds,
     )
 
-    change_ratio = 0.0
-    if current_limit > 0:
-        change_ratio = abs(target_rps - current_limit) / current_limit
+    change_ratio = config_change_ratio(current_config, recommendation)
 
     recent_change_block = (
         apply_recommendations
@@ -1303,33 +1548,13 @@ def recommend_config(
     if desired_algorithm == current_config.algorithm and change_ratio < MIN_RELATIVE_CHANGE:
         if not apply_recommendations:
             state.shadow_current_config = current_config
-            return build_response(
-                current_config.algorithm,
-                current_limit,
-                current_config,
-                round(predicted_rps, 3),
-            )
-        return build_response(
-            current_config.algorithm,
-            current_limit,
-            current_config,
-            round(predicted_rps, 3),
-        )
+            return keep_current_response(current_config, round(predicted_rps, 3))
+        return keep_current_response(current_config, round(predicted_rps, 3))
     if recent_change_block and desired_algorithm == current_config.algorithm:
         if not apply_recommendations:
             state.shadow_current_config = current_config
-            return build_response(
-                current_config.algorithm,
-                current_limit,
-                current_config,
-                round(predicted_rps, 3),
-            )
-        return build_response(
-            current_config.algorithm,
-            current_limit,
-            current_config,
-            round(predicted_rps, 3),
-        )
+            return keep_current_response(current_config, round(predicted_rps, 3))
+        return keep_current_response(current_config, round(predicted_rps, 3))
 
     if apply_recommendations:
         state.last_change_at = now
@@ -1345,6 +1570,9 @@ def recommend_config(
         else:
             state.shadow_current_config = current_config
     state.last_predicted_rps = round(predicted_rps, 3)
+    record_recommendation_switch(
+        current_config.algorithm, recommendation.algorithm, apply_recommendations
+    )
     return recommendation
 
 
@@ -1447,6 +1675,8 @@ async def limit_config(request: LimitConfigRequest) -> LimitConfigResponse:
     with state_lock:
         state.last_predicted_rps = predicted_rps
 
+    TOKEN_TUNER_ENABLED_GAUGE.set(1.0 if TOKEN_TUNER_ENABLED else 0.0)
+
     logging.info(
         "snapshot observed_rps=%.3f rejected_rate=%s latency_p95=%s errors5xx=%s algo=%s",
         request.observedRps,
@@ -1471,7 +1701,14 @@ async def limit_config(request: LimitConfigRequest) -> LimitConfigResponse:
         else:
             logging.warning("Using last known configuration after invalid currentConfig.")
         recommendation = keep_current_response(fallback_config, predicted_rps)
-        update_metrics(request, predicted_rps, recommendation, len(history), "invalid_config")
+        update_metrics(
+            request,
+            predicted_rps,
+            recommendation,
+            len(history),
+            "invalid_config",
+            token_profile=None,
+        )
         logging.info(
             "forecast predicted_rps=%.3f recommendation=%s",
             predicted_rps,
@@ -1483,15 +1720,27 @@ async def limit_config(request: LimitConfigRequest) -> LimitConfigResponse:
         recommendation = recommend_config(request, predicted, history, state, received_at)
         state.last_good_recommendation = recommendation
         state.last_good_config = request.currentConfig
+        token_profile = state.token_profile
     telemetry = derive_input_telemetry(
         request, predicted, history, max(current_rps_limit(request.currentConfig), MIN_RPS)
     )
     algorithm_scores = score_algorithms(telemetry)
-    update_metrics(request, predicted_rps, recommendation, len(history), "ok", algorithm_scores)
+    selector_signals = build_selector_signals(telemetry)
+    update_metrics(
+        request,
+        predicted_rps,
+        recommendation,
+        len(history),
+        "ok",
+        algorithm_scores,
+        token_profile,
+        selector_signals,
+    )
     logging.info(
-        "forecast predicted_rps=%.3f current_rps_limit=%.3f features=%s selector_scores=%s recommendation=%s",
+        "forecast predicted_rps=%.3f current_rps_limit=%.3f token_profile=%s features=%s selector_scores=%s recommendation=%s",
         predicted_rps,
         current_rps_limit(request.currentConfig),
+        token_profile,
         {key: round(value, 3) for key, value in telemetry.items()},
         algorithm_scores,
         recommendation.dict(exclude_none=True),

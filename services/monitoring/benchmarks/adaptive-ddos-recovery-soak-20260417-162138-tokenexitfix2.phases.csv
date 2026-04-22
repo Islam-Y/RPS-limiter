@@ -1,0 +1,3 @@
+phase_order,phase_name,duration_s,total_requests,forwarded,rejected,success_percent,reject_percent,effective_rps,loadgen_total,loadgen_errors,error_percent,avg_latency_ms,p95_latency_ms,token_share_percent,sliding_share_percent,fixed_share_percent
+1,ddos,720,164316.000000,150033.000000,14283.000000,91.31,8.69,228.217,164221.000000,0.000000,0.00,3.347,8.300,85.69,14.31,0.00
+2,recovery,720,28796.000000,28796.000000,0.000000,100.00,0.00,39.994,28796.000000,0.000000,0.00,1.977,2.536,7.82,92.18,0.00

@@ -86,8 +86,8 @@ Grafana UI: http://localhost:3000 (default: admin/admin)
 ### Service A (load‑generator)
 - `LOADGEN_CONFIG_FILE` (опционально, автозапуск теста)
 
-### 6.1 Подтвержденный adaptive-профиль
-Ниже приведен профиль, подтвержденный контрольными прогонами 17 апреля 2026 года. Это текущая рекомендуемая база для локального стенда и controlled rollout.
+### 6.1 Текущий adaptive-профиль
+Ниже приведен актуальный `docker-compose` baseline на `22 апреля 2026 года`. Это mixed-optimized профиль: он используется как основная база для локального стенда и universal benchmark. Для `ddos -> recovery` его нужно сверять с reference-артефактами из этапа `7.14`.
 
 Service C:
 - `RATE_LIMIT_ALGORITHM=sliding`
@@ -98,14 +98,23 @@ Service C:
 AI-module:
 - `RECOMMENDABLE_ALGORITHMS=sliding,token`
 - `ALLOW_ALGO_SWITCH=true`
-- `MIN_ALGO_SWITCH_INTERVAL_SECONDS=60`
-- `TOKEN_MIN_HOLD_SECONDS=60`
+- `MIN_ALGO_SWITCH_INTERVAL_SECONDS=20`
+- `TOKEN_MIN_HOLD_SECONDS=20`
 - `TOKEN_EXIT_NON_BURST_STREAK=3`
 - `SELECTOR_STREAK_REQUIRED=3`
 - `FIXED_ESCAPE_STREAK_REQUIRED=2`
-- `TOKEN_OVERLOAD_GAIN=0.30`
+- `TOKEN_OVERLOAD_GAIN=0.00`
 - `TOKEN_SMOOTH_CAPACITY_SECONDS=1.2`
+- `TOKEN_DDOS_CAPACITY_SECONDS=2.0`
+- `TOKEN_TUNER_ENABLED=false`
+- `TOKEN_TUNER_PROFILE_STREAK=2`
+- `TOKEN_TUNER_NOISY_GAIN=0.55`
+- `TOKEN_TUNER_NOISY_TARGET_RATIO=0.9`
+- `TOKEN_TUNER_NOISY_CAPACITY_SECONDS=1.35`
 - `LATENCY_P95_THRESHOLD=0.06`
+- `MIN_CHANGE_INTERVAL_SECONDS=20`
+- `MAX_STEP_UP_FACTOR=1.0`
+- `MAX_STEP_DOWN_FACTOR=0.85`
 - `ALGORITHM_SCORE_MARGIN=12`
 - `ALGORITHM_SCORE_MARGIN_OVERLOAD=5`
 
@@ -113,6 +122,7 @@ AI-module:
 - `fixed` исключен из adaptive-пула и нужен только для ручных тестов и benchmark-сравнения;
 - в штатном режиме и в recovery базовым алгоритмом остается `sliding`;
 - под burst/ddos adaptive должен уходить в `token`;
+- при noisy overload в `sliding` разрешен ранний escape в `token`, чтобы не проигрывать `static_token` на `poisson`-фазе;
 - возврат из `token` в `sliding` допустим только после устойчивого recovery, а не по одиночному окну со сниженным `rejectedRate`.
 
 ## 7. Пошаговое локальное тестирование (curl + Postman)
@@ -329,17 +339,21 @@ sleep 35
 after=$(curl -s "$AI_URL/metrics" | awk '/^ai_limit_config_requests_total\\{/{s+=$NF} END {print s+0}')
 echo "$before -> $after"
 
-curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_adaptive_(apply_enabled|recommendations_total|recommended_algorithm|recommended_limit|recommended_fill_rate)'
+curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_(adaptive_(apply_enabled|recommendations_total|recommended_algorithm|recommended_limit|recommended_fill_rate)|current_algorithm|algorithm_switch_total|config_applied_total)'
+
+curl -s "$AI_URL/metrics" | grep -E '^ai_(recommendation_switch_total|selector_signal_active)'
 ```
 Ожидание:
 - счетчик `ai_limit_config_requests_total` увеличивается;
 - в Service C появляются `ratelimiter_adaptive_recommendations_total`;
 - в Service C появляются `ratelimiter_adaptive_recommendations_by_algorithm_total`;
+- в AI доступны `ai_recommendation_switch_total` и `ai_selector_signal_active`;
 - при `ADAPTIVE_APPLY_RECOMMENDATIONS=false`:
   - `ratelimiter_adaptive_apply_enabled = 0`
   - растет `ratelimiter_adaptive_recommendations_total{mode="shadow"}`
   - для анализа selector vs static нужно смотреть на `ratelimiter_adaptive_recommendations_by_algorithm_total{algorithm=...,mode="shadow"}`
   - `ratelimiter_adaptive_recommended_algorithm{algorithm=...}` показывает только последнюю рекомендацию и может скрыть промежуточные переключения в течение теста
+  - `ratelimiter_algorithm_switch_total` в shadow mode не растет, потому что реального apply не было
   - текущий конфиг лимитера не меняется автоматически.
 
 Postman:
@@ -520,6 +534,24 @@ bash scripts/adaptive_phase_benchmark.sh \
 - при текущем `ADAPTIVE_INTERVAL=10s` технический минимум — `phase-seconds=20`, но для репрезентативного прогона лучше оставлять `phase-seconds=30`.
 - текущий `docker-compose.yml` должен соответствовать подтвержденному adaptive-профилю из раздела `6.1`, а не произвольному набору tuning-параметров.
 
+Reference mixed-benchmark на текущем профиле:
+- `monitoring/benchmarks/adaptive-phase-universal-noisyescape-20260422.summary.csv`
+- `monitoring/benchmarks/adaptive-phase-universal-noisyescape-20260422.switch-summary.csv`
+- `adaptive` на этом прогоне:
+  - средний success по фазам: `84.77%` против `81.12%` у `static_token`
+  - `poisson success = 78.11%`
+  - `ddos success = 70.69%`
+  - `recovery success = 100.00%`
+  - средний `p95 latency = 6.967 ms`
+  - средний `switch_count = 1`
+
+Go / No-Go для universal mixed benchmark:
+- `adaptive mean success >= static_token mean success`;
+- `poisson success >= 75%`;
+- `ddos success >= 65%`;
+- `recovery success = 100%`;
+- `mean switch_count <= 1`.
+
 ### 7.14 Этап 13 — controlled rollout adaptive apply (`ddos -> recovery`)
 Цель: проверить не только рекомендации в shadow mode, но и реальное переключение `sliding -> token -> sliding` под фазовой нагрузкой.
 
@@ -569,6 +601,18 @@ curl -X POST "$A_URL/test/start" \
   }'
 ```
 
+Для воспроизводимого long soak удобнее использовать готовый скрипт:
+```bash
+OUTPUT_PREFIX=monitoring/benchmarks/adaptive-ddos-recovery-soak-$(date +%Y%m%d-%H%M%S) \
+scripts/adaptive_ddos_recovery_soak.sh
+```
+Скрипт сам включает apply mode на время прогона, собирает:
+- `<prefix>.phases.csv`
+- `<prefix>.overall.csv`
+- `<prefix>.switch-summary.csv`
+- `<prefix>.timeline.csv`
+и затем возвращает limiter в безопасный режим (`ADAPTIVE_APPLY_RECOMMENDATIONS=false`, `algorithm=sliding`).
+
 Наблюдение во время прогона:
 ```bash
 watch -n 5 "curl -s '$C_URL/config/limits'"
@@ -576,26 +620,46 @@ watch -n 5 "curl -s '$C_URL/config/limits'"
 
 Дополнительно можно следить за adaptive-метриками:
 ```bash
-curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_adaptive_(apply_enabled|recommendations_total|recommendations_by_algorithm_total|recommended_algorithm)'
+curl -s "$C_URL/actuator/prometheus" | grep -E '^ratelimiter_(adaptive_(apply_enabled|recommendations_total|recommendations_by_algorithm_total|recommended_algorithm)|current_algorithm|algorithm_switch_total|config_applied_total)'
+curl -s "$AI_URL/metrics" | grep -E '^ai_(recommendation_switch_total|selector_signal_active)'
 ```
+Интерпретация:
+- `ratelimiter_algorithm_switch_total` — только реальные смены алгоритма;
+- `ratelimiter_config_applied_total` — любое применение конфига, включая повторные adaptive update внутри того же алгоритма.
 
 Ожидание:
 - в фазе `ddos` активный конфиг должен перейти из `sliding` в `token`;
 - в фазе `recovery` контур должен вернуться в `sliding`;
 - для короткого контрольного прогона `180s + 180s` нормальная последовательность — `sliding -> token -> sliding` без частых лишних переключений.
 
-Подтвержденные артефакты от 17 апреля 2026 года:
+Go / No-Go для controlled rollout:
+- `load-generator-service` заканчивает прогон без `loadgen_errors`;
+- `ddos success >= 90%`;
+- `recovery success = 100%`;
+- `weighted p95 latency <= 11 ms`;
+- `switch_count <= 3`;
+- последовательность переключений содержит `sliding -> token` и в конце возвращается в `sliding`.
+
+Reference-артефакты:
 - неудачный baseline до исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-135103.phases.csv`
   - `ddos success = 41.60%`
   - `recovery success = 100.00%`
-- контрольный короткий прогон после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-142435-burstguard.phases.csv`
-  - `ddos success = 91.64%`
+- консервативный long-soak reference после retune: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+  - `ddos success = 96.32%`
   - `recovery success = 100.00%`
+  - `weighted p95 latency = 6.966 ms`
   - `switch_count = 2`
-- длинный soak после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-143110-burstguard-full.phases.csv`
-  - `ddos success = 81.86%`
+  - sequence: `0:sliding|9:token|756:sliding`
+- текущий mixed-optimized профиль: `monitoring/benchmarks/adaptive-ddos-recovery-soak-noisyescape-final-20260422.overall.csv`
+  - `ddos success = 95.69%`
   - `recovery success = 100.00%`
-  - `switch_count = 10`
+  - `weighted p95 latency = 10.092 ms`
+  - `switch_count = 2`
+  - sequence: `0:sliding|10:token|759:sliding`
+
+Практический вывод:
+- если приоритет — universal mixed benchmark и `poisson` onset, ориентируйтесь на текущий mixed-optimized профиль из раздела `6.1`;
+- если приоритет — минимальный latency proxy на чистом `ddos -> recovery`, reference `20260420-retuned` пока лучше.
 
 Возврат к безопасному режиму после теста:
 ```bash
@@ -615,6 +679,11 @@ Grafana (примеры запросов):
 - % отклонений: `rate(ratelimiter_requests_total{decision="rejected"}[1m]) / rate(ratelimiter_requests_total[1m])`
 - p95 latency: `histogram_quantile(0.95, sum(rate(ratelimiter_request_duration_seconds_bucket[5m])) by (le))`
 - Loadgen RPS: `loadgen_current_rps`
+- Current algorithm: `ratelimiter_current_algorithm`
+- Algorithm switches: `increase(ratelimiter_algorithm_switch_total[15m])`
+- Config applies: `increase(ratelimiter_config_applied_total[15m])`
+- AI selector signals: `ai_selector_signal_active`
+- AI recommendation switches: `increase(ai_recommendation_switch_total[15m])`
 
 ## 9. Тест‑кейсы системы
 Сценарии и критерии для приемки полностью расписаны в разделе 7 (`7.1`–`7.14`) и покрывают:
@@ -631,7 +700,7 @@ Grafana (примеры запросов):
 - Нет метрик: проверьте `/actuator/prometheus` и конфиг Prometheus.
 - Redis недоступен: Service C переходит в fail‑open (ожидаемо).
 - AI модуль недоступен: Service C продолжает с последними лимитами.
-- Adaptive слишком часто переключается между `token` и `sliding`: сначала сверить фактические env-параметры с подтвержденным профилем из раздела `6.1`, затем проверить `ratelimiter_adaptive_recommendations_by_algorithm_total` и timeline фазового прогона.
+- Adaptive слишком часто переключается между `token` и `sliding`: сначала сверить фактические env-параметры с профилем из раздела `6.1`, затем проверить `ratelimiter_algorithm_switch_total`, `ratelimiter_current_algorithm`, `ai_selector_signal_active` и timeline фазового прогона.
 
 ## 11. Остановка
 - Локально: `Ctrl+C` в терминалах сервисов.

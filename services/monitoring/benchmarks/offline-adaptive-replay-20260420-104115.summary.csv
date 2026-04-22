@@ -1,0 +1,5 @@
+candidate,mode,weighted_score,weighted_success_percent,weighted_reject_percent,weighted_backend_error_percent,weighted_avg_latency_ms,weighted_p95_latency_ms,weighted_overload_seconds,total_switch_count,total_token_seconds,total_sliding_seconds,total_fixed_seconds
+static_token,static_token,51.845,65.400,30.097,4.503,20.902,37.445,3,0,480,0,0
+adaptive_baseline,adaptive,24.895,61.462,18.918,19.620,42.890,92.967,26,7,300,180,0
+adaptive_tuner_candidate,adaptive,24.895,61.462,18.918,19.620,42.890,92.967,26,7,300,180,0
+static_sliding,static_sliding,15.363,53.378,29.333,17.290,34.571,101.452,16.714,0,0,480,0

@@ -237,6 +237,95 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       }
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Current Algorithm",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "expr": "ratelimiter_current_algorithm{job=\"service-c\"}",
+          "legendFormat": "{{algorithm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "gray", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Config Applies (15m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum by (source, algorithm) (increase(ratelimiter_config_applied_total{job=\"service-c\"}[15m]))",
+          "legendFormat": "{{source}} {{algorithm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "Algorithm Switches (15m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum by (source, from_algorithm, to_algorithm) (increase(ratelimiter_algorithm_switch_total{job=\"service-c\"}[15m]))",
+          "legendFormat": "{{source}} {{from_algorithm}} -> {{to_algorithm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      }
     }
   ],
   "refresh": "10s",
@@ -249,6 +338,6 @@
   "timezone": "browser",
   "title": "RPS Limiter - Service C Deep Dive",
   "uid": "rps-rate-limiter",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

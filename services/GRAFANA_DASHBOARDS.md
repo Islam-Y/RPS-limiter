@@ -35,8 +35,8 @@ http://localhost:3000
 
 Какой дашборд для чего нужен:
 - `RPS Limiter - Platform Overview` — общая картина: RPS, 429, Redis, AI requests, базовые AI recommended values.
-- `RPS Limiter - Service C Deep Dive` — фактическое состояние limiter: requests by decision, requests by algorithm, current limit/window/capacity/fill rate.
-- `RPS Limiter - AI Adaptive Control` — внутреннее состояние AI-модуля: observed/predicted/recommended RPS, selector score, recommended config, active algorithm внутри AI.
+- `RPS Limiter - Service C Deep Dive` — фактическое состояние limiter: requests by decision, requests by algorithm, current limit/window/capacity/fill rate, текущий алгоритм, applied config и реальные switch counters.
+- `RPS Limiter - AI Adaptive Control` — внутреннее состояние AI-модуля: observed/predicted/recommended RPS, selector score, recommended config, active algorithm внутри AI, selector signals и recommendation switches.
 
 ### 2.1 Что сейчас считается нормой для adaptive
 Для текущего подтвержденного профиля стенда:
@@ -128,6 +128,14 @@ ai_last_predicted_rps{job="ai-module"}
 ```promql
 ai_last_algorithm{job="ai-module"}
 ```
+Активные selector signals:
+```promql
+ai_selector_signal_active{job="ai-module"}
+```
+Счетчик recommendation switches:
+```promql
+sum by (mode, from_algorithm, to_algorithm) (increase(ai_recommendation_switch_total{job="ai-module"}[15m]))
+```
 
 ## 8.1 Панели для adaptive shadow/apply mode
 Включён ли auto-apply:
@@ -172,6 +180,8 @@ ratelimiter_adaptive_recommended_fill_rate{job="service-c"}
 - для анализа реального поведения adaptive надежнее смотреть в связке:
   - `recommendations_total`
   - `recommendations_by_algorithm_total`
+  - `algorithm_switch_total`
+  - `config_applied_total`
   - `requests_by_algorithm_total`
   - текущий конфиг через `Service C Deep Dive`;
 - если adaptive-профиль выставлен правильно, в counters по алгоритмам `fixed` не должен быть рабочим winner в продовом adaptive-контуре.
@@ -185,12 +195,14 @@ ratelimiter_adaptive_recommended_fill_rate{job="service-c"}
 Минимальный набор панелей для наблюдения:
 1) `429 Ratio`
 2) `Requests by Algorithm`
-3) `Current Limit`
-4) `Token Fill Rate`
-5) `AI RPS: Observed vs Predicted vs Recommended`
-6) `AI Recommended Config Values`
-7) `Adaptive recommendations by mode`
-8) `Adaptive recommendations by algorithm`
+3) `Current Algorithm`
+4) `Current Limit`
+5) `Token Fill Rate`
+6) `Config Applies (15m)`
+7) `Algorithm Switches (15m)`
+8) `AI RPS: Observed vs Predicted vs Recommended`
+9) `Selector Signals`
+10) `Recommendation Switches`
 
 Если делаешь свой дашборд, добавь такие PromQL:
 
@@ -219,24 +231,45 @@ ratelimiter_window_seconds{job="service-c"}
 ratelimiter_bucket_capacity{job="service-c"}
 ```
 
+Фактический текущий алгоритм:
+```promql
+ratelimiter_current_algorithm{job="service-c"}
+```
+
+Сколько раз реально применялся конфиг за окно:
+```promql
+sum by (source, algorithm) (increase(ratelimiter_config_applied_total{job="service-c"}[15m]))
+```
+Это счетчик всех apply событий, не только смен алгоритма.
+
+Сколько было реальных алгоритмических переключений:
+```promql
+sum by (source, from_algorithm, to_algorithm) (increase(ratelimiter_algorithm_switch_total{job="service-c"}[15m]))
+```
+
 Что ожидается на успешном `ddos -> recovery` прогоне:
 - в фазе `ddos` должен вырасти share `token` в `Requests by Algorithm`;
 - в фазе `recovery` контур должен вернуться в `sliding`;
 - на хорошем коротком контрольном прогоне последовательность обычно читается как `sliding -> token -> sliding`, без длинной oscillation туда-сюда.
 
-Подтвержденные reference-артефакты от 17 апреля 2026 года:
+Reference-артефакты:
 - baseline до исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-135103.phases.csv`
   - `ddos success = 41.60%`
-- короткий контрольный прогон после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-142435-burstguard.phases.csv`
-  - `ddos success = 91.64%`
+- консервативный long-soak reference: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+  - `ddos success = 96.32%`
+  - `weighted p95 latency = 6.966 ms`
   - `switch_count = 2`
-- длинный soak после исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-143110-burstguard-full.phases.csv`
-  - `ddos success = 81.86%`
-  - `switch_count = 10`
+  - sequence: `0:sliding|9:token|756:sliding`
+- текущий mixed-optimized профиль: `monitoring/benchmarks/adaptive-ddos-recovery-soak-noisyescape-final-20260422.overall.csv`
+  - `ddos success = 95.69%`
+  - `weighted p95 latency = 10.092 ms`
+  - `switch_count = 2`
+  - sequence: `0:sliding|10:token|759:sliding`
 
 Важно:
 - только по одному gauge `ratelimiter_adaptive_recommended_algorithm` нельзя делать вывод, что adaptive действительно переключал контур;
-- подтверждение реального переключения ищется по `Requests by Algorithm`, `Current Limit/Fill Rate` и counters applied recommendations.
+- подтверждение реального переключения ищется по `Requests by Algorithm`, `Current Algorithm`, `Current Limit/Fill Rate`, `ratelimiter_algorithm_switch_total` и counters applied recommendations.
+- для текущего mixed-optimized профиля clean switch pattern сохранился, но latency на long `ddos -> recovery` выше, чем у `20260420-retuned`; это нормальный компромисс между universal mixed behavior и чистым soak latency.
 
 ## 9. Как называть и сохранять
 1) В редакторе панели поменяй **Title** (например, `Rate limiter RPS`).  
@@ -267,6 +300,11 @@ ratelimiter_bucket_capacity{job="service-c"}
 Для adaptive-отладки лучше расширить набор до 10 панелей:
 9) Requests by Algorithm
 10) Recommended Algorithm / Recommended Fill Rate / Current Fill Rate
+
+Для apply-mode на практике полезнее расширить до 13 панелей:
+11) Current Algorithm
+12) Config Applies (15m)
+13) Algorithm Switches (15m)
 
 Пример Redis availability:
 ```promql

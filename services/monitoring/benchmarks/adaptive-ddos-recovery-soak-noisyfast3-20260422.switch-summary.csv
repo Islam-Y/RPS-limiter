@@ -1,0 +1,2 @@
+mode,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+adaptive_ddos_recovery_soak,4,658,699,0,0,0:sliding|9:token|414:sliding|464:token|758:sliding

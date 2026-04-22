@@ -203,6 +203,58 @@
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "showUnfilled": true
       }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Selector Signals",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "ai_selector_signal_active{job=\"ai-module\"}",
+          "legendFormat": "{{signal}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Recommendation Switches",
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by (mode, from_algorithm, to_algorithm) (increase(ai_recommendation_switch_total{job=\"ai-module\"}[$__rate_interval]))",
+          "legendFormat": "{{mode}} {{from_algorithm}} -> {{to_algorithm}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
     }
   ],
   "refresh": "10s",
@@ -215,6 +267,6 @@
   "timezone": "browser",
   "title": "RPS Limiter - AI Adaptive Control",
   "uid": "rps-ai-adaptive",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

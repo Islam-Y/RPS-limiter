@@ -1,0 +1,4 @@
+scenario,mode,runs,mean_switch_count,ci95_switch_count,mean_token_seconds,mean_sliding_seconds,mean_fixed_seconds,mean_unknown_seconds
+phase_universal_mix,static_token,3,0.00,0.00,150.000,0.000,0.000,0.000
+phase_universal_mix,adaptive,3,1.67,1.43,100.667,41.667,0.000,0.000
+phase_universal_mix,static_sliding,3,0.00,0.00,0.000,150.000,0.000,0.000

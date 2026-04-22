@@ -10,14 +10,16 @@ import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.itmo.rate_limiter_service.config.RateLimiterProperties;
 import ru.itmo.rate_limiter_service.model.Algorithm;
+import ru.itmo.rate_limiter_service.model.RateLimiterConfig;
 import ru.itmo.rate_limiter_service.model.RateLimiterConfigPayload;
-import ru.itmo.rate_limiter_service.service.RateLimiterConfigService;
 import ru.itmo.rate_limiter_service.service.RedisAvailability;
 
 @Component
@@ -25,7 +27,6 @@ import ru.itmo.rate_limiter_service.service.RedisAvailability;
 public class RateLimiterMetrics {
 	private final MeterRegistry registry;
 	private final RateLimiterProperties properties;
-	private final RateLimiterConfigService configService;
 	private final RedisAvailability redisAvailability;
 
 	private Counter forwarded;
@@ -37,6 +38,13 @@ public class RateLimiterMetrics {
 	private Timer requestTimer;
 	private Timer redisTimer;
 	private Counter redisErrors;
+	private final ConcurrentMap<String, Counter> algorithmSwitches = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, Counter> configApplies = new ConcurrentHashMap<>();
+	private final AtomicReference<Algorithm> currentAlgorithm = new AtomicReference<>(Algorithm.FIXED);
+	private final AtomicLong currentLimit = new AtomicLong();
+	private final AtomicLong currentWindowSeconds = new AtomicLong();
+	private final AtomicLong currentCapacity = new AtomicLong();
+	private final AtomicReference<Double> currentFillRate = new AtomicReference<>(0.0);
 	private final AtomicReference<Algorithm> adaptiveRecommendedAlgorithm = new AtomicReference<>(Algorithm.FIXED);
 	private final AtomicLong adaptiveRecommendedLimit = new AtomicLong();
 	private final AtomicLong adaptiveRecommendedWindowSeconds = new AtomicLong();
@@ -88,14 +96,20 @@ public class RateLimiterMetrics {
 			}
 		}
 
-		Gauge.builder("ratelimiter_current_limit", () -> configService.getCurrent().getLimit())
+		Gauge.builder("ratelimiter_current_limit", currentLimit, value -> value.get())
 			.register(registry);
-		Gauge.builder("ratelimiter_window_seconds", () -> configService.getCurrent().getWindowSeconds())
+		Gauge.builder("ratelimiter_window_seconds", currentWindowSeconds, value -> value.get())
 			.register(registry);
-		Gauge.builder("ratelimiter_bucket_capacity", () -> configService.getCurrent().getCapacity())
+		Gauge.builder("ratelimiter_bucket_capacity", currentCapacity, value -> value.get())
 			.register(registry);
-		Gauge.builder("ratelimiter_token_fill_rate", () -> configService.getCurrent().getFillRate())
+		Gauge.builder("ratelimiter_token_fill_rate", currentFillRate, value -> value.get())
 			.register(registry);
+		for (Algorithm algorithm : Algorithm.values()) {
+			Gauge.builder("ratelimiter_current_algorithm",
+					() -> currentAlgorithm.get() == algorithm ? 1 : 0)
+				.tag("algorithm", algorithm.toJson())
+				.register(registry);
+		}
 
 		Gauge.builder("ratelimiter_redis_connected", () -> redisAvailability.isAvailable() ? 1 : 0)
 			.register(registry);
@@ -152,6 +166,42 @@ public class RateLimiterMetrics {
 
 	public void incrementRedisError() {
 		redisErrors.increment();
+	}
+
+	public void recordAlgorithmSwitch(Algorithm from, Algorithm to, String source) {
+		if (from == null || to == null || from == to) {
+			return;
+		}
+		algorithmSwitches.computeIfAbsent(
+			source + ":" + from.name() + ":" + to.name(),
+			key -> Counter.builder("ratelimiter_algorithm_switch_total")
+				.tag("source", source)
+				.tag("from_algorithm", from.toJson())
+				.tag("to_algorithm", to.toJson())
+				.register(registry)
+		).increment();
+	}
+
+	public void recordConfigApplied(RateLimiterConfig config, String source) {
+		if (config == null) {
+			return;
+		}
+		currentAlgorithm.set(config.getAlgorithm());
+		currentLimit.set(config.getLimit());
+		currentWindowSeconds.set(config.getWindowSeconds());
+		currentCapacity.set(config.getCapacity());
+		currentFillRate.set(config.getFillRate());
+		Algorithm algorithm = config.getAlgorithm();
+		if (algorithm == null) {
+			return;
+		}
+		configApplies.computeIfAbsent(
+			source + ":" + algorithm.name(),
+			key -> Counter.builder("ratelimiter_config_applied_total")
+				.tag("source", source)
+				.tag("algorithm", algorithm.toJson())
+				.register(registry)
+		).increment();
 	}
 
 	public void recordAdaptiveRecommendation(RateLimiterConfigPayload payload, boolean applied) {
