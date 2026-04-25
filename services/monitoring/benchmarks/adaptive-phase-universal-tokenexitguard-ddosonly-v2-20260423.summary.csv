@@ -1,0 +1,16 @@
+scenario,mode,phase_order,phase_name,runs,mean_success_percent,ci95_success_percent,mean_reject_percent,ci95_reject_percent,mean_effective_rps,ci95_effective_rps,mean_error_percent,ci95_error_percent,mean_avg_latency_ms,ci95_avg_latency_ms,mean_p95_latency_ms,ci95_p95_latency_ms,mean_token_share_percent,mean_sliding_share_percent,mean_fixed_share_percent,dominant_algorithm
+phase_universal_mix,static_token,1,steady,6,100.00,0.00,0.00,0.00,43.444,0.356,0.00,0.00,3.003,1.745,5.599,3.212,100.00,0.00,0.00,token
+phase_universal_mix,adaptive,1,steady,6,100.00,0.00,0.00,0.00,42.694,0.368,0.00,0.00,4.800,0.507,9.075,0.980,0.00,100.00,0.00,sliding
+phase_universal_mix,static_sliding,1,steady,6,100.00,0.00,0.00,0.00,43.345,0.200,0.00,0.00,2.311,0.070,3.941,0.396,0.00,100.00,0.00,sliding
+phase_universal_mix,static_token,2,poisson,6,74.84,0.35,25.16,0.35,138.945,0.949,0.00,0.00,3.166,0.488,6.517,1.010,100.00,0.00,0.00,token
+phase_universal_mix,adaptive,2,poisson,6,70.42,9.05,29.58,9.05,143.039,4.340,0.00,0.00,3.366,0.228,7.339,0.675,65.33,34.67,0.00,token
+phase_universal_mix,static_sliding,2,poisson,6,19.13,2.30,80.87,2.30,139.055,1.025,0.00,0.00,1.460,0.216,3.443,0.228,0.00,100.00,0.00,sliding
+phase_universal_mix,static_token,3,burst,6,78.94,0.84,21.06,0.84,80.745,4.105,0.00,0.00,2.913,0.178,7.098,1.043,100.00,0.00,0.00,token
+phase_universal_mix,adaptive,3,burst,6,75.08,3.62,24.92,3.62,73.900,3.889,0.00,0.00,3.162,0.333,8.784,1.438,100.00,0.00,0.00,token
+phase_universal_mix,static_sliding,3,burst,6,65.19,9.36,34.81,9.36,78.817,2.469,0.00,0.00,2.657,0.244,7.825,0.939,0.00,100.01,0.00,sliding
+phase_universal_mix,static_token,4,ddos,6,46.90,2.35,53.10,2.35,216.622,8.315,0.00,0.00,2.982,0.580,7.423,0.900,100.00,0.00,0.00,token
+phase_universal_mix,adaptive,4,ddos,6,71.04,5.18,28.96,5.18,225.072,12.263,0.00,0.00,3.384,0.220,8.443,0.873,100.00,0.00,0.00,token
+phase_universal_mix,static_sliding,4,ddos,6,6.80,2.29,93.20,2.29,221.350,9.719,0.00,0.00,1.543,0.098,3.829,0.549,0.00,100.00,0.00,sliding
+phase_universal_mix,static_token,5,recovery,6,100.00,0.00,0.00,0.00,39.355,0.336,0.00,0.00,2.443,0.218,3.626,0.729,100.00,0.00,0.00,token
+phase_universal_mix,adaptive,5,recovery,6,100.00,0.00,0.00,0.00,38.956,0.480,0.00,0.00,2.365,0.227,3.823,0.583,99.77,0.23,0.00,token
+phase_universal_mix,static_sliding,5,recovery,6,77.41,3.95,22.59,3.95,39.511,0.211,0.00,0.00,1.990,0.148,3.366,0.520,0.00,100.00,0.00,sliding

@@ -50,8 +50,15 @@ class RecommenderSelectorTest(unittest.TestCase):
             "TOKEN_TUNER_NOISY_GAIN": ai.TOKEN_TUNER_NOISY_GAIN,
             "TOKEN_TUNER_NOISY_TARGET_RATIO": ai.TOKEN_TUNER_NOISY_TARGET_RATIO,
             "TOKEN_TUNER_NOISY_CAPACITY_SECONDS": ai.TOKEN_TUNER_NOISY_CAPACITY_SECONDS,
+            "TOKEN_TUNER_NOISY_ENTRY_SECONDS": ai.TOKEN_TUNER_NOISY_ENTRY_SECONDS,
+            "TOKEN_TUNER_NOISY_ENTRY_GAIN": ai.TOKEN_TUNER_NOISY_ENTRY_GAIN,
+            "TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO": ai.TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO,
+            "TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS": ai.TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS,
             "RECOVERY_HEADROOM": ai.RECOVERY_HEADROOM,
             "TOKEN_EXIT_UTILIZATION_MAX": ai.TOKEN_EXIT_UTILIZATION_MAX,
+            "TOKEN_DDOS_EXIT_UTILIZATION_MAX": ai.TOKEN_DDOS_EXIT_UTILIZATION_MAX,
+            "TOKEN_DDOS_EXIT_STREAK_REQUIRED": ai.TOKEN_DDOS_EXIT_STREAK_REQUIRED,
+            "TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS": ai.TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS,
             "TOKEN_EXTREME_OVERLOAD_REJECT_RATE": ai.TOKEN_EXTREME_OVERLOAD_REJECT_RATE,
             "TOKEN_EXTREME_OVERLOAD_RATIO": ai.TOKEN_EXTREME_OVERLOAD_RATIO,
             "TOKEN_EXTREME_OVERLOAD_PEAK_RATIO": ai.TOKEN_EXTREME_OVERLOAD_PEAK_RATIO,
@@ -79,8 +86,15 @@ class RecommenderSelectorTest(unittest.TestCase):
         ai.TOKEN_TUNER_NOISY_GAIN = 0.55
         ai.TOKEN_TUNER_NOISY_TARGET_RATIO = 0.9
         ai.TOKEN_TUNER_NOISY_CAPACITY_SECONDS = 1.35
+        ai.TOKEN_TUNER_NOISY_ENTRY_SECONDS = 20
+        ai.TOKEN_TUNER_NOISY_ENTRY_GAIN = 0.75
+        ai.TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO = 1.0
+        ai.TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS = 1.45
         ai.RECOVERY_HEADROOM = 1.1
         ai.TOKEN_EXIT_UTILIZATION_MAX = 0.95
+        ai.TOKEN_DDOS_EXIT_UTILIZATION_MAX = 0.5
+        ai.TOKEN_DDOS_EXIT_STREAK_REQUIRED = 6
+        ai.TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS = 300
         ai.TOKEN_EXTREME_OVERLOAD_REJECT_RATE = 0.9
         ai.TOKEN_EXTREME_OVERLOAD_RATIO = 2.0
         ai.TOKEN_EXTREME_OVERLOAD_PEAK_RATIO = 2.5
@@ -426,8 +440,33 @@ class RecommenderSelectorTest(unittest.TestCase):
 
         # Assert
         self.assertEqual("token", recommendation.algorithm)
-        self.assertEqual(100.0, recommendation.fillRate)
-        self.assertEqual(200, recommendation.capacity)
+        self.assertAlmostEqual(135.837, recommendation.fillRate, places=3)
+        self.assertEqual(197, recommendation.capacity)
+
+    def test_resolves_noisy_token_profile_on_entry_from_sliding(self):
+        # Arrange
+        state = ai.RecommendationState(token_profile="default")
+        features = {
+            "rejected_rate": 0.37,
+            "observed_rps": 135.837,
+            "allowed_rps": 85.497,
+            "rejected_rps": 50.339,
+            "peak_rps_1s": 140.0,
+            "burst_ratio": 1.031,
+            "coefficient_of_variation": 0.271,
+            "peak_to_limit_ratio": 1.4,
+            "observed_to_limit_ratio": 1.358,
+            "load_ratio": 1.358,
+            "latency_p95": 0.044,
+            "errors_5xx": 0.0,
+        }
+
+        # Act
+        profile = ai.resolve_token_profile(state, "sliding", "token", features)
+
+        # Assert
+        self.assertEqual("noisy", profile)
+        self.assertEqual("noisy", state.token_profile)
 
     def test_resolves_ddos_token_profile_immediately(self):
         # Arrange
@@ -521,6 +560,72 @@ class RecommenderSelectorTest(unittest.TestCase):
         self.assertAlmostEqual(122.253, recommendation.fillRate, places=3)
         self.assertEqual(166, recommendation.capacity)
 
+    def test_applies_noisy_entry_boost_shortly_after_switch_to_token(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        now = datetime(2026, 3, 20, tzinfo=timezone.utc)
+        state = ai.RecommendationState(last_algo_switch_at=now - timedelta(seconds=10))
+        history = make_points([132, 136, 140, 138, 135])
+        request = ai.LimitConfigRequest(
+            observedRps=135.837,
+            allowedRps=85.497,
+            rejectedRps=50.339,
+            rejectedRate=0.371,
+            peakRps1s=140,
+            burstRatio=1.031,
+            coefficientOfVariation=0.271,
+            latencyP95=0.044,
+            errors5xx=0,
+            currentConfig=token_config(),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            50.764,
+            history,
+            state,
+            now,
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(135.837, recommendation.fillRate, places=3)
+        self.assertEqual(197, recommendation.capacity)
+
+    def test_stops_noisy_entry_boost_after_entry_window_expires(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        now = datetime(2026, 3, 20, tzinfo=timezone.utc)
+        state = ai.RecommendationState(last_algo_switch_at=now - timedelta(seconds=25))
+        history = make_points([132, 136, 140, 138, 135])
+        request = ai.LimitConfigRequest(
+            observedRps=135.837,
+            allowedRps=85.497,
+            rejectedRps=50.339,
+            rejectedRate=0.371,
+            peakRps1s=140,
+            burstRatio=1.031,
+            coefficientOfVariation=0.271,
+            latencyP95=0.044,
+            errors5xx=0,
+            currentConfig=token_config(),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            50.764,
+            history,
+            state,
+            now,
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertAlmostEqual(122.253, recommendation.fillRate, places=3)
+        self.assertEqual(166, recommendation.capacity)
+
     def test_keeps_token_during_active_overload_even_if_sliding_scores_higher(self):
         # Arrange
         ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
@@ -606,6 +711,11 @@ class RecommenderSelectorTest(unittest.TestCase):
             last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
             recovery_streak=5,
             token_non_burst_streak=5,
+            token_entry_limit_rps=100.0,
+            token_exit_guard_active=True,
+            token_exit_guard_recovery_streak=ai.TOKEN_DDOS_EXIT_STREAK_REQUIRED,
+            token_exit_guard_started_at=datetime(2026, 3, 20, tzinfo=timezone.utc)
+            - timedelta(seconds=400),
         )
         history = make_points([40, 40, 40, 40, 40])
         request = ai.LimitConfigRequest(
@@ -640,6 +750,177 @@ class RecommenderSelectorTest(unittest.TestCase):
         self.assertEqual(445, recommendation.limit)
         self.assertEqual(10, recommendation.window)
 
+    def test_respects_ddos_guard_min_hold_before_exiting(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        now = datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=131)
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+            recovery_streak=8,
+            token_non_burst_streak=8,
+            token_entry_limit_rps=100.0,
+            token_exit_guard_active=True,
+            token_exit_guard_recovery_streak=ai.TOKEN_DDOS_EXIT_STREAK_REQUIRED,
+            token_exit_guard_started_at=now - timedelta(seconds=120),
+        )
+        history = make_points([40, 40, 40, 40, 40])
+        request = ai.LimitConfigRequest(
+            observedRps=40.0,
+            allowedRps=40.0,
+            rejectedRps=0.0,
+            rejectedRate=0.0,
+            peakRps1s=42.0,
+            burstRatio=1.05,
+            coefficientOfVariation=0.03,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=440,
+                fillRate=220.0,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            42.0,
+            history,
+            state,
+            now,
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+
+    def test_requires_guard_release_streak_before_exiting_ddos_token(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+            recovery_streak=8,
+            token_non_burst_streak=8,
+            token_entry_limit_rps=100.0,
+            token_exit_guard_active=True,
+            token_exit_guard_recovery_streak=0,
+            token_exit_guard_started_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+        )
+        history = make_points([40, 40, 40, 40, 40])
+        request = ai.LimitConfigRequest(
+            observedRps=40.0,
+            allowedRps=40.0,
+            rejectedRps=0.0,
+            rejectedRate=0.0,
+            peakRps1s=42.0,
+            burstRatio=1.05,
+            coefficientOfVariation=0.03,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=440,
+                fillRate=220.0,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            42.0,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=131),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertEqual(1, state.token_exit_guard_recovery_streak)
+
+    def test_keeps_token_while_load_stays_far_above_entry_baseline(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+            recovery_streak=6,
+            token_non_burst_streak=6,
+            token_entry_limit_rps=100.0,
+            token_exit_guard_active=True,
+            token_exit_guard_recovery_streak=4,
+            token_exit_guard_started_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+        )
+        history = make_points([178, 181, 179, 182, 180])
+        request = ai.LimitConfigRequest(
+            observedRps=180.0,
+            allowedRps=180.0,
+            rejectedRps=0.0,
+            rejectedRate=0.0,
+            peakRps1s=190.0,
+            burstRatio=1.056,
+            coefficientOfVariation=0.04,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=440,
+                fillRate=220.0,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            175.0,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=131),
+        )
+
+        # Assert
+        self.assertEqual("token", recommendation.algorithm)
+        self.assertEqual(220.0, recommendation.fillRate)
+        self.assertEqual(440, recommendation.capacity)
+        self.assertEqual(0, state.token_exit_guard_recovery_streak)
+
+    def test_allows_sliding_exit_when_entry_guard_not_active(self):
+        # Arrange
+        ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
+        state = ai.RecommendationState(
+            last_algo_switch_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+            recovery_streak=6,
+            token_non_burst_streak=6,
+            token_entry_limit_rps=100.0,
+            token_exit_guard_active=False,
+        )
+        history = make_points([178, 181, 179, 182, 180])
+        request = ai.LimitConfigRequest(
+            observedRps=180.0,
+            allowedRps=180.0,
+            rejectedRps=0.0,
+            rejectedRate=0.0,
+            peakRps1s=190.0,
+            burstRatio=1.056,
+            coefficientOfVariation=0.04,
+            latencyP95=0.04,
+            errors5xx=0,
+            currentConfig=ai.LimitConfigIn(
+                algorithm="token",
+                capacity=440,
+                fillRate=220.0,
+            ),
+        )
+
+        # Act
+        recommendation = ai.recommend_config(
+            request,
+            175.0,
+            history,
+            state,
+            datetime(2026, 3, 20, tzinfo=timezone.utc) + timedelta(seconds=131),
+        )
+
+        # Assert
+        self.assertEqual("sliding", recommendation.algorithm)
+
     def test_preserves_rate_floor_when_switching_to_token_on_overload(self):
         # Arrange
         ai.RECOMMENDABLE_ALGORITHMS = ("sliding", "token")
@@ -672,6 +953,9 @@ class RecommenderSelectorTest(unittest.TestCase):
         self.assertEqual("token", recommendation.algorithm)
         self.assertEqual(100.0, recommendation.fillRate)
         self.assertEqual(200, recommendation.capacity)
+        self.assertEqual(100.0, state.token_entry_limit_rps)
+        self.assertFalse(state.token_exit_guard_active)
+        self.assertIsNone(state.token_exit_guard_started_at)
 
     def test_keeps_sliding_recovery_floor_during_forecast_lag(self):
         # Arrange
@@ -969,6 +1253,9 @@ class RecommenderSelectorTest(unittest.TestCase):
         self.assertEqual("token", recommendation.algorithm)
         self.assertAlmostEqual(211.874, recommendation.fillRate, places=3)
         self.assertEqual(424, recommendation.capacity)
+        self.assertAlmostEqual(161.4, state.token_entry_limit_rps, places=3)
+        self.assertTrue(state.token_exit_guard_active)
+        self.assertEqual(datetime(2026, 3, 20, tzinfo=timezone.utc), state.token_exit_guard_started_at)
 
     def test_breaks_sliding_cooldown_for_token_ddos_pressure(self):
         # Arrange

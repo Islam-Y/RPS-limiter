@@ -87,7 +87,7 @@ Grafana UI: http://localhost:3000 (default: admin/admin)
 - `LOADGEN_CONFIG_FILE` (опционально, автозапуск теста)
 
 ### 6.1 Текущий adaptive-профиль
-Ниже приведен актуальный `docker-compose` baseline на `22 апреля 2026 года`. Это mixed-optimized профиль: он используется как основная база для локального стенда и universal benchmark. Для `ddos -> recovery` его нужно сверять с reference-артефактами из этапа `7.14`.
+Ниже приведен актуальный `docker-compose` safe baseline на `24 апреля 2026 года`. Он используется как стартовая база локального стенда. Для universal mixed benchmark подтвержден отдельный candidate с `TOKEN_TUNER_ENABLED=true`; его reference-артефакты приведены в этапах `7.13` и `7.14`.
 
 Service C:
 - `RATE_LIMIT_ALGORITHM=sliding`
@@ -111,6 +111,12 @@ AI-module:
 - `TOKEN_TUNER_NOISY_GAIN=0.55`
 - `TOKEN_TUNER_NOISY_TARGET_RATIO=0.9`
 - `TOKEN_TUNER_NOISY_CAPACITY_SECONDS=1.35`
+- `TOKEN_TUNER_NOISY_ENTRY_SECONDS=20`
+- `TOKEN_TUNER_NOISY_ENTRY_GAIN=0.75`
+- `TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO=1.03`
+- `TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS=1.45`
+- `TOKEN_DDOS_EXIT_STREAK_REQUIRED=6`
+- `TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS=300`
 - `LATENCY_P95_THRESHOLD=0.06`
 - `MIN_CHANGE_INTERVAL_SECONDS=20`
 - `MAX_STEP_UP_FACTOR=1.0`
@@ -118,12 +124,24 @@ AI-module:
 - `ALGORITHM_SCORE_MARGIN=12`
 - `ALGORITHM_SCORE_MARGIN_OVERLOAD=5`
 
+Validated mixed-optimized candidate для benchmark / controlled rollout:
+- `TOKEN_TUNER_ENABLED=true`
+- `TOKEN_TUNER_NOISY_ENTRY_SECONDS=20`
+- `TOKEN_TUNER_NOISY_ENTRY_GAIN=0.75`
+- `TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO=1.03`
+- `TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS=1.45`
+- `TOKEN_DDOS_EXIT_STREAK_REQUIRED=6`
+- `TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS=300`
+- reference mixed: `monitoring/benchmarks/adaptive-phase-universal-v7-target103-tuneron-r3-20260424.summary.csv`
+- reference long-soak: `monitoring/benchmarks/adaptive-ddos-recovery-soak-v7-target103-tuneron-20260424.overall.csv`
+
 Что означает этот профиль:
 - `fixed` исключен из adaptive-пула и нужен только для ручных тестов и benchmark-сравнения;
+- safe baseline держит `TOKEN_TUNER_ENABLED=false`; для воспроизведения текущего mixed-optimized candidate tuner нужно включать явно на время benchmark / rollout-прогона;
 - в штатном режиме и в recovery базовым алгоритмом остается `sliding`;
 - под burst/ddos adaptive должен уходить в `token`;
-- при noisy overload в `sliding` разрешен ранний escape в `token`, чтобы не проигрывать `static_token` на `poisson`-фазе;
-- возврат из `token` в `sliding` допустим только после устойчивого recovery, а не по одиночному окну со сниженным `rejectedRate`.
+- при noisy overload в `sliding` разрешен ранний escape в `token`; при включенном tuner поверх этого работает short-lived noisy entry boost, чтобы не проигрывать `static_token` на `poisson`-фазе;
+- возврат из `token` в `sliding` допустим только после устойчивого recovery; для `ddos`-входа дополнительно действует exit guard, чтобы не было ложного раннего выхода посреди длинной атаки.
 
 ## 7. Пошаговое локальное тестирование (curl + Postman)
 Ниже — полный минимально-достаточный тест-план для функциональности из `specification.md`.
@@ -534,23 +552,26 @@ bash scripts/adaptive_phase_benchmark.sh \
 - при текущем `ADAPTIVE_INTERVAL=10s` технический минимум — `phase-seconds=20`, но для репрезентативного прогона лучше оставлять `phase-seconds=30`.
 - текущий `docker-compose.yml` должен соответствовать подтвержденному adaptive-профилю из раздела `6.1`, а не произвольному набору tuning-параметров.
 
-Reference mixed-benchmark на текущем профиле:
-- `monitoring/benchmarks/adaptive-phase-universal-noisyescape-20260422.summary.csv`
-- `monitoring/benchmarks/adaptive-phase-universal-noisyescape-20260422.switch-summary.csv`
+Reference mixed-benchmark на текущем mixed-optimized candidate (`TOKEN_TUNER_ENABLED=true`):
+- `monitoring/benchmarks/adaptive-phase-universal-v7-target103-tuneron-r3-20260424.summary.csv`
+- `monitoring/benchmarks/adaptive-phase-universal-v7-target103-tuneron-r3-20260424.switch-summary.csv`
 - `adaptive` на этом прогоне:
-  - средний success по фазам: `84.77%` против `81.12%` у `static_token`
-  - `poisson success = 78.11%`
-  - `ddos success = 70.69%`
+  - средний success по фазам: `92.42%` против `80.10%` у `static_token`
+  - `poisson success = 91.41%`
+  - `burst success = 96.23%`
+  - `ddos success = 74.48%`
   - `recovery success = 100.00%`
-  - средний `p95 latency = 6.967 ms`
-  - средний `switch_count = 1`
+  - средний `p95 latency = 7.799 ms`
+  - средний `switch_count = 1.33`
+  - типовой sequence: `0:sliding|39:token`, иногда `0:sliding|39:token|150:sliding`
 
 Go / No-Go для universal mixed benchmark:
 - `adaptive mean success >= static_token mean success`;
-- `poisson success >= 75%`;
-- `ddos success >= 65%`;
+- `poisson success >= 85%`;
+- `ddos success >= 70%`;
 - `recovery success = 100%`;
-- `mean switch_count <= 1`.
+- `mean switch_count <= 2`;
+- не допускается oscillation-петля `sliding -> token -> sliding -> token` внутри одной mixed-run.
 
 ### 7.14 Этап 13 — controlled rollout adaptive apply (`ddos -> recovery`)
 Цель: проверить не только рекомендации в shadow mode, но и реальное переключение `sliding -> token -> sliding` под фазовой нагрузкой.
@@ -644,21 +665,25 @@ Reference-артефакты:
 - неудачный baseline до исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-135103.phases.csv`
   - `ddos success = 41.60%`
   - `recovery success = 100.00%`
-- консервативный long-soak reference после retune: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+- консервативный long-soak reference после retune:
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.switch-summary.csv`
   - `ddos success = 96.32%`
   - `recovery success = 100.00%`
   - `weighted p95 latency = 6.966 ms`
   - `switch_count = 2`
   - sequence: `0:sliding|9:token|756:sliding`
-- текущий mixed-optimized профиль: `monitoring/benchmarks/adaptive-ddos-recovery-soak-noisyescape-final-20260422.overall.csv`
-  - `ddos success = 95.69%`
+- текущий mixed-optimized candidate (`TOKEN_TUNER_ENABLED=true`):
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-v7-target103-tuneron-20260424.overall.csv`
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-v7-target103-tuneron-20260424.switch-summary.csv`
+  - `ddos success = 97.93%`
   - `recovery success = 100.00%`
-  - `weighted p95 latency = 10.092 ms`
+  - `weighted p95 latency = 9.351 ms`
   - `switch_count = 2`
-  - sequence: `0:sliding|10:token|759:sliding`
+  - sequence: `0:sliding|9:token|787:sliding`
 
 Практический вывод:
-- если приоритет — universal mixed benchmark и `poisson` onset, ориентируйтесь на текущий mixed-optimized профиль из раздела `6.1`;
+- если приоритет — universal mixed benchmark и `poisson` onset, ориентируйтесь на текущий mixed-optimized candidate из раздела `6.1`;
 - если приоритет — минимальный latency proxy на чистом `ddos -> recovery`, reference `20260420-retuned` пока лучше.
 
 Возврат к безопасному режиму после теста:

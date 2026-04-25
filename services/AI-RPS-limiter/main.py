@@ -124,8 +124,29 @@ TOKEN_TUNER_NOISY_TARGET_RATIO = float(
 TOKEN_TUNER_NOISY_CAPACITY_SECONDS = float(
     os.getenv("TOKEN_TUNER_NOISY_CAPACITY_SECONDS", "1.35")
 )
+TOKEN_TUNER_NOISY_ENTRY_SECONDS = int(
+    os.getenv("TOKEN_TUNER_NOISY_ENTRY_SECONDS", "20")
+)
+TOKEN_TUNER_NOISY_ENTRY_GAIN = float(
+    os.getenv("TOKEN_TUNER_NOISY_ENTRY_GAIN", "0.75")
+)
+TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO = float(
+    os.getenv("TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO", "1.03")
+)
+TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS = float(
+    os.getenv("TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS", "1.45")
+)
 RECOVERY_HEADROOM = 1.1
 TOKEN_EXIT_UTILIZATION_MAX = 0.95
+TOKEN_DDOS_EXIT_UTILIZATION_MAX = float(
+    os.getenv("TOKEN_DDOS_EXIT_UTILIZATION_MAX", "0.5")
+)
+TOKEN_DDOS_EXIT_STREAK_REQUIRED = int(
+    os.getenv("TOKEN_DDOS_EXIT_STREAK_REQUIRED", "6")
+)
+TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS = int(
+    os.getenv("TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS", "300")
+)
 TOKEN_EXTREME_OVERLOAD_REJECT_RATE = float(
     os.getenv("TOKEN_EXTREME_OVERLOAD_REJECT_RATE", "0.9")
 )
@@ -390,6 +411,10 @@ class RecommendationState:
     token_non_burst_streak: int = 0
     attack_streak: int = 0
     recovery_streak: int = 0
+    token_entry_limit_rps: Optional[float] = None
+    token_exit_guard_active: bool = False
+    token_exit_guard_recovery_streak: int = 0
+    token_exit_guard_started_at: Optional[datetime] = None
     token_profile: Optional[str] = None
     token_profile_candidate: Optional[str] = None
     token_profile_streak: int = 0
@@ -779,6 +804,7 @@ def derive_input_telemetry(
     load_ratio = safe_ratio(max(observed_rps, predicted_rps), current_limit, 0.0)
 
     return {
+        "current_limit_rps": current_limit,
         "observed_rps": observed_rps,
         "allowed_rps": allowed_rps,
         "rejected_rps": rejected_rps,
@@ -982,6 +1008,12 @@ def resolve_token_profile(
         return None
 
     desired_profile = desired_token_profile(current_algorithm, features)
+    if (
+        current_algorithm != "token"
+        and desired_profile == "default"
+        and is_token_noisy_overload(features)
+    ):
+        desired_profile = "noisy"
     if current_algorithm != "token" or state.token_profile is None:
         state.token_profile = desired_profile
         state.token_profile_candidate = None
@@ -1055,6 +1087,59 @@ def is_sliding_rebalance_window(features: Dict[str, float]) -> bool:
         and features["peak_to_limit_ratio"] <= 1.4
         and features["coefficient_of_variation"] >= 0.25
     )
+
+
+def token_exit_utilization_threshold(
+    state: RecommendationState, features: Dict[str, float]
+) -> float:
+    if not state.token_exit_guard_active:
+        return TOKEN_EXIT_UTILIZATION_MAX
+
+    current_limit = max(features.get("current_limit_rps", 0.0), MIN_RPS)
+    entry_limit = max(state.token_entry_limit_rps or 0.0, 0.0)
+    reference_limit = max(current_limit, entry_limit)
+    if reference_limit <= 0.0:
+        return TOKEN_EXIT_UTILIZATION_MAX
+
+    if (
+        features["observed_rps"] <= reference_limit * TOKEN_DDOS_EXIT_UTILIZATION_MAX
+        and features["peak_rps_1s"] <= reference_limit * 1.25
+    ):
+        return TOKEN_EXIT_UTILIZATION_MAX
+    return 0.0
+
+
+def is_token_exit_guard_release_window(
+    state: RecommendationState, features: Dict[str, float]
+) -> bool:
+    if not state.token_exit_guard_active:
+        return True
+
+    entry_limit = max(state.token_entry_limit_rps or 0.0, MIN_RPS)
+    if entry_limit <= 0.0:
+        return True
+
+    return (
+        features["observed_rps"] <= entry_limit * TOKEN_DDOS_EXIT_UTILIZATION_MAX
+        and features["peak_rps_1s"] <= entry_limit * 1.25
+    )
+
+
+def is_recent_token_entry(
+    current_algorithm: str,
+    desired_algorithm: str,
+    state: RecommendationState,
+    now: datetime,
+) -> bool:
+    if desired_algorithm != "token":
+        return False
+    if current_algorithm != "token":
+        return True
+    if state.last_algo_switch_at is None:
+        return False
+    return (
+        now - state.last_algo_switch_at
+    ).total_seconds() <= TOKEN_TUNER_NOISY_ENTRY_SECONDS
 
 
 def select_algorithm(
@@ -1231,8 +1316,24 @@ def select_algorithm(
         and candidate_algorithm == "sliding"
         and state.recovery_streak >= max(1, RECOVERY_STREAK_REQUIRED)
         and state.token_non_burst_streak >= max(1, TOKEN_EXIT_NON_BURST_STREAK)
+        and (
+            not state.token_exit_guard_active
+            or (
+                state.token_exit_guard_started_at is not None
+                and (
+                    now - state.token_exit_guard_started_at
+                ).total_seconds()
+                >= max(0, TOKEN_DDOS_GUARD_MIN_HOLD_SECONDS)
+            )
+        )
+        and (
+            not state.token_exit_guard_active
+            or state.token_exit_guard_recovery_streak
+            >= max(1, TOKEN_DDOS_EXIT_STREAK_REQUIRED)
+        )
         and is_stable_recovery_window(features)
-        and features["observed_to_limit_ratio"] <= TOKEN_EXIT_UTILIZATION_MAX
+        and features["observed_to_limit_ratio"]
+        <= token_exit_utilization_threshold(state, features)
     )
 
     if current_algorithm == "token" and candidate_algorithm != "token":
@@ -1417,6 +1518,16 @@ def recommend_config(
             state.token_non_burst_streak += 1
         else:
             state.token_non_burst_streak = 0
+    if current_config.algorithm == "token" and state.token_exit_guard_active:
+        if (
+            is_stable_recovery_window(telemetry)
+            and is_token_exit_guard_release_window(state, telemetry)
+        ):
+            state.token_exit_guard_recovery_streak += 1
+        else:
+            state.token_exit_guard_recovery_streak = 0
+    else:
+        state.token_exit_guard_recovery_streak = 0
 
     algorithm_scores = score_algorithms(telemetry)
     desired_algorithm = select_algorithm(
@@ -1433,6 +1544,16 @@ def recommend_config(
         desired_algorithm,
         telemetry,
     )
+    if (
+        current_config.algorithm == "token"
+        and desired_algorithm == "token"
+        and token_profile == "ddos"
+        and not state.token_exit_guard_active
+    ):
+        state.token_entry_limit_rps = current_limit
+        state.token_exit_guard_active = True
+        state.token_exit_guard_recovery_streak = 0
+        state.token_exit_guard_started_at = now
     token_capacity_seconds = None
     if desired_algorithm == "token":
         if (
@@ -1512,17 +1633,34 @@ def recommend_config(
                 TOKEN_DDOS_CAPACITY_SECONDS,
             )
         elif token_profile == "noisy":
+            noisy_entry_boost = is_recent_token_entry(
+                current_config.algorithm, desired_algorithm, state, now
+            )
+            noisy_gain = (
+                TOKEN_TUNER_NOISY_ENTRY_GAIN
+                if noisy_entry_boost
+                else TOKEN_TUNER_NOISY_GAIN
+            )
+            noisy_target_ratio = (
+                TOKEN_TUNER_NOISY_ENTRY_TARGET_RATIO
+                if noisy_entry_boost
+                else TOKEN_TUNER_NOISY_TARGET_RATIO
+            )
+            noisy_capacity_seconds = (
+                TOKEN_TUNER_NOISY_ENTRY_CAPACITY_SECONDS
+                if noisy_entry_boost
+                else TOKEN_TUNER_NOISY_CAPACITY_SECONDS
+            )
             target_rps = max(
                 target_rps,
                 current_limit,
-                telemetry["allowed_rps"]
-                + telemetry["rejected_rps"] * TOKEN_TUNER_NOISY_GAIN,
-                telemetry["observed_rps"] * TOKEN_TUNER_NOISY_TARGET_RATIO,
+                telemetry["allowed_rps"] + telemetry["rejected_rps"] * noisy_gain,
+                telemetry["observed_rps"] * noisy_target_ratio,
             )
             target_rps = clamp(target_rps, MIN_RPS, max_rps)
             token_capacity_seconds = min(
                 token_capacity_seconds or TOKEN_CAPACITY_SECONDS,
-                TOKEN_TUNER_NOISY_CAPACITY_SECONDS,
+                noisy_capacity_seconds,
             )
 
     recommendation = build_response(
@@ -1559,11 +1697,35 @@ def recommend_config(
     if apply_recommendations:
         state.last_change_at = now
         if desired_algorithm != current_config.algorithm:
+            if desired_algorithm == "token":
+                state.token_entry_limit_rps = current_limit
+                state.token_exit_guard_active = token_profile == "ddos"
+                state.token_exit_guard_recovery_streak = 0
+                state.token_exit_guard_started_at = (
+                    now if token_profile == "ddos" else None
+                )
+            elif current_config.algorithm == "token":
+                state.token_entry_limit_rps = None
+                state.token_exit_guard_active = False
+                state.token_exit_guard_recovery_streak = 0
+                state.token_exit_guard_started_at = None
             state.attack_streak = 0
             state.recovery_streak = 0
             state.token_non_burst_streak = 0
     else:
         if desired_algorithm != current_config.algorithm:
+            if desired_algorithm == "token":
+                state.token_entry_limit_rps = current_limit
+                state.token_exit_guard_active = token_profile == "ddos"
+                state.token_exit_guard_recovery_streak = 0
+                state.token_exit_guard_started_at = (
+                    now if token_profile == "ddos" else None
+                )
+            elif current_config.algorithm == "token":
+                state.token_entry_limit_rps = None
+                state.token_exit_guard_active = False
+                state.token_exit_guard_recovery_streak = 0
+                state.token_exit_guard_started_at = None
             state.shadow_current_config = config_from_response(
                 recommendation, current_config
             )

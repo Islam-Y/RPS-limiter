@@ -42,6 +42,9 @@ http://localhost:3000
 Для текущего подтвержденного профиля стенда:
 - adaptive-пул ограничен `sliding,token`;
 - `fixed` должен оставаться доступным только для ручных тестов и benchmark-сравнения, но не должен регулярно появляться в adaptive recommendation counters;
+- safe baseline стартует с `TOKEN_TUNER_ENABLED=false`;
+- validated mixed-optimized candidate для benchmark / controlled rollout требует `TOKEN_TUNER_ENABLED=true`;
+- при включенном tuner должен быть виден noisy entry boost на входе в `token`, а для `ddos`-входа должен удерживаться exit guard до устойчивого recovery;
 - по умолчанию стенд стартует в `shadow mode`, поэтому в метриках обычно видно:
   - `ratelimiter_adaptive_apply_enabled = 0`
   - растут только `ratelimiter_adaptive_recommendations_total{mode="shadow"}`
@@ -255,21 +258,35 @@ sum by (source, from_algorithm, to_algorithm) (increase(ratelimiter_algorithm_sw
 Reference-артефакты:
 - baseline до исправления: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260417-135103.phases.csv`
   - `ddos success = 41.60%`
-- консервативный long-soak reference: `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+- консервативный long-soak reference:
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.overall.csv`
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-20260420-retuned.switch-summary.csv`
   - `ddos success = 96.32%`
+  - `recovery success = 100.00%`
   - `weighted p95 latency = 6.966 ms`
   - `switch_count = 2`
   - sequence: `0:sliding|9:token|756:sliding`
-- текущий mixed-optimized профиль: `monitoring/benchmarks/adaptive-ddos-recovery-soak-noisyescape-final-20260422.overall.csv`
-  - `ddos success = 95.69%`
-  - `weighted p95 latency = 10.092 ms`
+- текущий mixed-optimized candidate (`TOKEN_TUNER_ENABLED=true`):
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-v7-target103-tuneron-20260424.overall.csv`
+  - `monitoring/benchmarks/adaptive-ddos-recovery-soak-v7-target103-tuneron-20260424.switch-summary.csv`
+  - `ddos success = 97.93%`
+  - `recovery success = 100.00%`
+  - `weighted p95 latency = 9.351 ms`
   - `switch_count = 2`
-  - sequence: `0:sliding|10:token|759:sliding`
+  - sequence: `0:sliding|9:token|787:sliding`
+- reference mixed benchmark для текущего candidate:
+  - `monitoring/benchmarks/adaptive-phase-universal-v7-target103-tuneron-r3-20260424.summary.csv`
+  - `adaptive mean success = 92.42%`
+  - `static_token mean success = 80.10%`
+  - `poisson success = 91.41%`
+  - `burst success = 96.23%`
+  - `ddos success = 74.48%`
+  - `recovery success = 100.00%`
 
 Важно:
 - только по одному gauge `ratelimiter_adaptive_recommended_algorithm` нельзя делать вывод, что adaptive действительно переключал контур;
 - подтверждение реального переключения ищется по `Requests by Algorithm`, `Current Algorithm`, `Current Limit/Fill Rate`, `ratelimiter_algorithm_switch_total` и counters applied recommendations.
-- для текущего mixed-optimized профиля clean switch pattern сохранился, но latency на long `ddos -> recovery` выше, чем у `20260420-retuned`; это нормальный компромисс между universal mixed behavior и чистым soak latency.
+- текущий mixed-optimized candidate лучше подходит для universal mixed и `poisson` onset; если цель — минимальный p95 на чистом long `ddos -> recovery`, `20260420-retuned` остается более быстрым latency reference.
 
 ## 9. Как называть и сохранять
 1) В редакторе панели поменяй **Title** (например, `Rate limiter RPS`).  

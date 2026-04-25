@@ -1,0 +1,10 @@
+scenario,mode,repeat,switch_count,token_seconds,sliding_seconds,fixed_seconds,unknown_seconds,sequence
+phase_universal_mix,static_token,1,0,150,0,0,0,0:token
+phase_universal_mix,static_token,2,0,150,0,0,0,0:token
+phase_universal_mix,static_token,3,0,150,0,0,0,0:token
+phase_universal_mix,static_sliding,1,0,0,150,0,0,0:sliding
+phase_universal_mix,static_sliding,2,0,0,150,0,0,0:sliding
+phase_universal_mix,static_sliding,3,0,0,150,0,0,0:sliding
+phase_universal_mix,adaptive,1,1,105,38,0,0,0:sliding|40:token
+phase_universal_mix,adaptive,2,1,105,37,0,0,0:sliding|39:token
+phase_universal_mix,adaptive,3,1,104,38,0,0,0:sliding|40:token

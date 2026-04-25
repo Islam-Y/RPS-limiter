@@ -1,0 +1,2 @@
+mode,total_requests,forwarded,rejected,success_percent,reject_percent,weighted_avg_latency_ms,weighted_p95_latency_ms
+adaptive_ddos_recovery_soak,163779,151760,12019,92.66,7.34,3.472,7.765
