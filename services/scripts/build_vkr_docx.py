@@ -149,16 +149,16 @@ def add_toc_field(paragraph):
 
 
 def parse_blocks(lines: List[str]):
-    # Use first occurrences for terms/abbr and body from the second "Введение"
+    # Use first occurrences for terms/abbr and body from the standalone "Введение" heading.
     idx_terms = lines.index("Термины и определения")
     idx_abbr = lines.index("Перечень сокращений и условных обозначений")
     idx_toc = lines.index("СОДЕРЖАНИЕ")
 
     intro_positions = [i for i, line in enumerate(lines) if line == "Введение"]
-    if len(intro_positions) < 2:
-        raise ValueError("Ожидалось минимум два заголовка 'Введение' (в оглавлении и тексте).")
+    if not intro_positions:
+        raise ValueError("Ожидался заголовок 'Введение' в тексте.")
 
-    idx_intro_text = intro_positions[1]
+    idx_intro_text = intro_positions[-1]
     idx_sources = max(i for i, line in enumerate(lines) if line == "Список использованных источников")
     idx_illustr = max(i for i, line in enumerate(lines) if line == "Список иллюстративного материала")
 
@@ -166,11 +166,12 @@ def parse_blocks(lines: List[str]):
 
     terms = [x for x in lines[idx_terms + 1 : idx_abbr] if x.strip()]
     abbr = [x for x in lines[idx_abbr + 1 : idx_toc] if x.strip()]
+    contents = [x for x in lines[idx_toc + 1 : idx_intro_text] if x.strip()]
     body = lines[idx_intro_text:idx_sources]
     sources = [x for x in lines[idx_sources + 1 : idx_illustr] if x.strip()]
     illustr = [x for x in lines[idx_illustr + 1 :] if x.strip()]
 
-    return topic, terms, abbr, body, sources, illustr
+    return topic, terms, abbr, contents, body, sources, illustr
 
 
 def is_chapter(line: str) -> bool:
@@ -357,7 +358,7 @@ def add_image_from_reference(document: Document, raw_ref: str):
         add_plain_paragraph(document, f"Ссылка на изображение: {raw_ref}", indent=False)
 
 
-def build_doc(topic: str, terms: List[str], abbr: List[str], body: List[str], sources: List[str], illustr: List[str]):
+def build_doc(topic: str, terms: List[str], abbr: List[str], contents: List[str], body: List[str], sources: List[str], illustr: List[str]):
     doc = Document()
 
     sec = doc.sections[0]
@@ -406,9 +407,9 @@ def build_doc(topic: str, terms: List[str], abbr: List[str], body: List[str], so
 
     # CONTENTS
     add_heading(doc, "СОДЕРЖАНИЕ", level=1, structural=True)
-    toc_p = doc.add_paragraph()
-    set_paragraph_base(toc_p, indent=False)
-    add_toc_field(toc_p)
+    for line in contents:
+        p = add_plain_paragraph(doc, line, indent=False)
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
     # Terms
     insert_page_break(doc)
@@ -520,8 +521,8 @@ def build_doc(topic: str, terms: List[str], abbr: List[str], body: List[str], so
 
 def main():
     lines = SRC.read_text(encoding="utf-8").splitlines()
-    topic, terms, abbr, body, sources, illustr = parse_blocks(lines)
-    build_doc(topic, terms, abbr, body, sources, illustr)
+    topic, terms, abbr, contents, body, sources, illustr = parse_blocks(lines)
+    build_doc(topic, terms, abbr, contents, body, sources, illustr)
     print(f"Saved: {OUT}")
 
 

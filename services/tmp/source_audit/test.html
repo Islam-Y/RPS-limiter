@@ -1,0 +1,1167 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<head>
+<meta http-equiv='Content-Type' content='text/html; charset=Windows-1251'>
+<META NAME='keywords' CONTENT='Проблемы передачи информации'>
+
+  <script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+      extensions: ["tex2jax.js"],
+      jax: ["input/TeX", "output/CommonHTML", "output/HTML-CSS","output/SVG", "output/PreviewHTML"],
+      tex2jax: {
+          inlineMath: [ ['$','$'] ],
+          displayMath: [ ['$$','$$'] ],
+          processEscapes: true
+          },
+
+
+      "HTML-CSS": {
+      	imageFont: null,
+        webFont: "STIX-Web",
+        availableFonts: ["TeX"],    // Or: ["STIX"], to allow local // ["TeX"]
+        preferredFont: ["TeX"]    // Or: "STIX", to allow local     // ["TeX"]
+      },
+
+      //"SVG": {
+      //  font: "STIX-Web"
+      //},
+
+      TeX: { 
+      	equationNumbers: { autoNumber: "AMS" },
+      	extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js"],
+
+      	Macros:	{
+      		le: ['\\leqslant'],
+      		ge: ['\\geqslant'],
+      		textup: ['\\text'],
+      		Box: ['\\unicode{x25A1}'],
+      		}
+      }
+
+    });
+
+    MathJax.Hub.Register.StartupHook('TeX Jax Ready', function () {
+       MathJax.InputJax.TeX.prefilterHooks.Add(function (data) {
+         data.math=data.math.replace(/\mathbb\{1\}/g,'unicode{x1D7D9}');
+         data.math=data.math.replace(/\mathbb\{2\}/g,'unicode{x1D7DA}');
+       });
+    });
+
+
+  </script>
+  
+  <script type="text/javascript" src="/libs/mathjax/2.7.7/latest.js?config=TeX-AMS_HTML"></script>
+  
+
+<link title="Проблемы передачи информации, Последний номер" rel="alternate" type="application/rss+xml" href="/rss/rssLastIssue.phtml?jrnid=ppi&option_lang=rus"><link title="Проблемы передачи информации, Текущие выпуски" rel="alternate" type="application/rss+xml" href="/rss/rssRecentIssues.phtml?mode=current&jrnid=ppi&option_lang=rus"><link title="Проблемы передачи информации, Архивные выпуски" rel="alternate" type="application/rss+xml" href="/rss/rssRecentIssues.phtml?mode=archive&jrnid=ppi&option_lang=rus">
+
+	<title>Проблемы передачи информации</title>
+	<link rel="canonical" href="https://www.mathnet.ru//php/journal.phtml?jrnid=ppi&option_lang=rus" />
+	<link href='/css/mathnet.css?v=1.17' rel='stylesheet' type='text/css'>
+	<link href='/css/webcard.css' rel='stylesheet' type='text/css'>
+
+
+	<link rel="preconnect" href="https://fonts.gstatic.com">
+	<link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@600&display=swap" rel="stylesheet">
+
+ 	</head>
+	<body class='mainInfo' >
+
+	<table border=0 width=100% cellspacing=0 cellpadding=0><tr><td><table
+        border=0 width=100% cellspacing=0 cellpadding=0>
+	<tr class=topPic>
+		
+	<td style="
+		background-image: url('/gifs/__mathnetru.jpg'); 
+		background-repeat:no-repeat; 
+		background-position: center center; 
+		text-align: center;
+		vertical-align: bottom;
+		font-family: 'Source Sans Pro', sans-serif;
+		font-size: 22pt;
+		padding-bottom:5px;
+		">
+	Проблемы передачи информации
+	</td>
+		</tr>
+	</table>
+
+
+
+		<table border=0 width=100% cellspacing=0 cellpadding=0>
+	<tr  >
+	
+	<td style='width:10%' valign=middle align=left class=fon13>
+		<nobr>
+		<a class=r1 href=/php/journal.phtml?jrnid=ppi&option_lang=rus>RUS</a>&nbsp;
+	    	<a class=r1 href=/php/journal.phtml?jrnid=ppi&option_lang=eng>ENG</a></nobr>
+	    	</nobr>
+			</td>
+	<td style='width:10%' align=left class=fon13>
+	<nobr>
+	<a title='Главная страница' href=/?option_lang=rus><img src=/images/home2.gif border=0></a>
+	<a title='Мобильная версия' href=http://m.mathnet.ru/php/journal.phtml?jrnid=ppi&option_lang=rus><img src=/images/mobile.gif border=0></a>
+	&nbsp;&nbsp;
+	<a title='Telegram' href='https://t.me/MathNetRu'><img src=/images/64px-Telegram_logo.svg.png height=20 vspace=2 border=0></a>
+	<!--<a title='Twitter' href='https://twitter.com/MathNetRu'><img src=/images/Twitter_Social_Icon_Circle_Color.png  height=20 vspace=2  border=0></a>-->
+	<a title='YouTube' href='https://www.youtube.com/channel/UC_fq8SDW37l86fdJxlprL1A'><img src=/images/youtube_social_circle_red.png vspace=2 height=20 border=0></a>
+	</nobr>
+
+	</td>
+
+	<td style='width:60%' class=fon13 align=center>
+	<nobr>
+		<a class=r1 href=/ej.phtml?option_lang=rus>ЖУРНАЛЫ</a>
+		&nbsp;	
+		<a class=r1 href=/php/person.phtml?option_lang=rus>ПЕРСОНАЛИИ</a>
+		&nbsp;
+		<a class=r1 href=/php/organisation.phtml?option_lang=rus>ОРГАНИЗАЦИИ</a>
+		&nbsp;
+		<a class=r1 href=/php/conference.phtml?option_lang=rus>КОНФЕРЕНЦИИ</a>
+		&nbsp;
+		<a class=r1 href=/php/seminars.phtml?option_lang=rus>СЕМИНАРЫ</a>
+		&nbsp;
+		<a class=r1 href=/php/presentation.phtml?option_lang=rus>ВИДЕОТЕКА</a>
+		&nbsp;
+		<a class=r1 href=/poffice/mirefmodule.phtml?wshow=mirefmodule&option_lang=rus>ПАКЕТ AMSBIB</a>
+
+	</nobr>
+	</td>
+
+	<td style='width:20%' class=fon13>&nbsp;</td>
+	
+	</tr>
+	</table>
+
+	<noscript>
+	<div style='margin: 10px; padding: 10px; text-align: center; border: 1px solid #A91818; background-color: lightyellow'>
+	<b>JavaScript is disabled in your browser. Please switch it on to enable full functionality of the website</b>
+	</div>
+	</noscript>
+
+
+
+	<script language="JavaScript" src="/js/func_string.js?v=8.7"></script>
+<script language="JavaScript" src="/js/phpjs.js?v=1"></script>
+<link rel="STYLESHEET" type="text/css" href="/css/calendar.css">
+<script language=JavaScript>
+var EDIT_DISABLED_BOOL;
+var CALENDAR_LANG;
+</script>
+ 
+
+	
+<script language=JavaScript src=/js/func_dates.js?v=1></script>  <script language=JavaScript src="/js/libmenu.js?v=3"></script>
+	<script language=JavaScript src="/js/md5.js"></script>
+	<script language=JavaScript src="/js/prototype.js?v=1"></script>
+        <script language=JavaScript src="/js/func_controls.js?v=3"></script>
+		
+	<table border=0 cellspacing=0 cellpadding=10 width=100%>
+	<tr>
+	<td valign=top class=leftcol>
+	  <script language=JavaScript>
+	function NavMOver(eItem,i){
+	//eItem.DefaultBgColor = eItem.style.backgroundColor;
+	//eItem.style.backgroundColor = 'lightyellow';
+	}
+
+	function NavMOut(eItem,i){
+	//eItem.style.backgroundColor = eItem.DefaultBgColor;
+	}
+	</script>
+
+	<table width=100%>
+		<tr>
+			<td valign=top align=right><IMG src="/gifs/ar8.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry1" href="/php/journal.phtml?jrnid=ppi&wshow=details&option_lang=rus">Общая информация</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/ar9.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/php/currentissue.phtml?jrnid=ppi&option_lang=rus">Последний выпуск</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/ar9.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/php/archive.phtml?jrnid=ppi&wshow=contents&option_lang=rus">Архив</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/ar9.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/php/ifactor.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus">Импакт-фактор</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/ar9.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/rus/ppi/authornotes">Правила для авторов</a></nobr></td>
+			</tr>
+				<tr>
+			<td><br></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/search.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/php/search.phtml?jrnid=ppi&tjrnid=ppi&wshow=search&option_lang=rus">Поиск публикаций</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/search.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/php/searchrefs.phtml?option_lang=rus">Поиск ссылок</a></nobr></td>
+			</tr>
+				<tr>
+			<td><br></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/rss.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="ry" href="/rss/rssRecentIssues.phtml?jrnid=ppi&option_lang=rus">RSS</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/1pts.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="rys" href="/rss/rssLastIssue.phtml?jrnid=ppi&option_lang=rus">Последний выпуск</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/1pts.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="rys" href="/rss/rssRecentIssues.phtml?mode=current&jrnid=ppi&option_lang=rus">Текущие выпуски</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/1pts.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="rys" href="/rss/rssRecentIssues.phtml?mode=archive&jrnid=ppi&option_lang=rus">Архивные выпуски</a></nobr></td>
+			</tr>
+				<tr>
+			<td valign=top align=right><IMG src="/gifs/1pts.gif" border=0></td>
+			<td valign=top align=left><nobr><a class="rys" href="/help.phtml?wshow=rss&option_lang=rus">Что такое RSS</a></nobr></td>
+			</tr>
+				</table>
+	<br>
+	<hr color=#AC4E4A>
+	<br>
+		
+	<table border=0 cellspacing=0 cellpadding=2>
+	<script language=JavaScript>
+	function fsubmit_findfast(){
+		myform=document.forms['findfast'];
+		if(myform.syear.value=='' && myform.svolume.value=='' && myform.sissue.value=='' && myform.spage.value==''){
+			alert('Введите данные для поиска');
+			return false;
+		}
+		return true;
+	}
+	
+	function fsubmit_findfast_do(){
+		if(fsubmit_findfast()){
+			document.forms['findfast'].submit();
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
+	
+	</script>
+	<form name='findfast' action=/php/journal.phtml method=GET onSubmit="return fsubmit_findfast()">
+	<input type=hidden name=jrnid value=ppi>
+	<input type=hidden name=option_lang value=rus>
+	<input type=hidden name=wshow value=fgo>
+	<tr>
+	<td colspan=2 class=x-bl><b>Пробл. передачи информ.:</b></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Год:</td>
+	<td><input type=input class=ID size=10 name=syear value=></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Том:</td>
+	<td><input type=input class=ID size=10 name=svolume value=></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Выпуск:</td>
+	<td><input type=input class=ID size=10 name=sissue value=></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Страница:</td>
+	<td><input type=input class=ID size=10 name=spage value=></td>
+	</tr>
+
+	<tr>
+	<td align=right class=x-bl><input type=image src=/images/ar5.gif border=0></td>
+	<td><a class=ri href=# onClick="return fsubmit_findfast_do()">Найти</a></td>
+	</tr>
+	</form>
+	</table>
+	
+	<br>
+	<hr color=#AC4E4A size=1>
+	<br>
+	
+<script>
+  (function() {
+    var cx = '016263596811403645603:nkhdtbysq40';
+    var gcse = document.createElement('script');
+    gcse.type = 'text/javascript';
+    gcse.async = true;
+    gcse.src = (document.location.protocol == 'https:' ? 'https:' : 'http:')
+    +
+        '//cse.google.com/cse.js?cx=' + cx;
+    var s = document.getElementsByTagName('script')[0];
+    s.parentNode.insertBefore(gcse, s);
+  })();
+</script>
+<gcse:searchbox-only resultsUrl="/googlesitesearch.phtml?option_lang=rus" newWindow="false" queryParameterName="q"></gcse:searchbox-only>
+    
+<br>
+<hr color=#AC4E4A size=1>
+<br>
+	<table border=0 cellspacing=0 cellpadding=2>
+	<script language=JavaScript src=/js/md5.js></script>
+	<script language=JavaScript src=/js/func_string.js></script>
+	<script language=JavaScript>
+	function fsubmit_login(){
+		myform=document.forms['loginf'];
+		myform.login.value=trim(myform.login.value);
+		myform.password.value=trim(myform.password.value);
+		if(myform.login.value=='' && myform.password.value==''){
+			alert('Введите логин и пароль');
+			return false;
+		}
+
+		if(!CheckStringReg(myform.login.value,regLogin,'Логин')){return false;}
+		myform.phash.value=MD5(myform.password.value);
+		myform.password.value='';
+		return true;
+	}
+	
+	function fsubmit_login_do(){
+		if(fsubmit_login()){
+			document.forms['loginf'].submit();
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
+	
+	</script>
+	<a name=login></a>
+	<form name='loginf' action=/personal/plogin_do.phtml?option_lang=rus method=POST onSubmit="return fsubmit_login()">
+	<input type=hidden name=phash value=''>
+
+	<tr>
+	<td align=left colspan=2 class=x-bl><b><nobr>Персональный вход:</nobr></b></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Логин:</td>
+	<td align=left><input type=input class=ID size=10 name=login></td>
+	</tr>
+	<tr>
+	<td align=right class=x-bl>Пароль:</td>
+	<td align=left><input type=password class=ID size=10 name=password></td>
+	</tr>
+
+	<tr>
+	<td align=right class=x-bl><input type=checkbox name=if_savelogin></td>
+	<td class=x-bl align=left><nobr>Запомнить пароль</nobr></td>
+	</tr>
+
+	<tr>
+	<td align=right class=x-bl><input type=image src=/images/ar5.gif border=0></td>
+	<td align=left><a class=ri href=# onClick="return fsubmit_login_do()">Войти</a></td>
+	</tr>
+
+	<tr>
+	<td align=right class=x-bl><img src=/images/ar5.gif border=0></td>
+	<td align=left><a class=ri href=/php/getpassword.phtml?option_lang=rus>Забыли пароль?</a></td>
+	</tr>
+
+	<tr>
+	<td align=right class=x-bl><img src=/images/ar5.gif border=0></td>
+	<td align=left><a class=ri href=/php/registration.phtml?option_lang=rus>Регистрация</a></td>
+	</tr>
+	<input type=hidden name=qs value="/php/journal.phtml?jrnid=ppi&option_lang=rus">
+	<input type=hidden name=qsrw value="">
+	</form>
+	</table>
+	
+	<br>
+
+		
+	<div align=center>
+
+	<a href="http://www.mathjax.org/">
+	<img hspace=35 title="Powered by MathJax" src="/gifs/mathjax.png" border="0" alt="Powered by MathJax"/ width=80 >
+	</a>
+	
+
+	<a href=http://www.crossref.org>
+	<img title='Crossref' width=100 hspace=35 src="/gifs/crossrefenabled.gif" border=0>
+	</a>
+
+	</div>
+		</td>
+	<td valign=top>
+		<h2>Проблемы передачи информации</h2><h3><a target=_blank class=SLink href=https://link.springer.com/journal/11122>Problems of Information Transmission</a></h3><p align=justify><a class=SLink title='Первый выпуск'
+href='http://www.mathnet.ru/ppi/1/1/'>Первый выпуск</a>  журнала &quot;Проблемы передачи информации&quot; вышел в 1965&nbsp;г.</p><p align=justify>Журнал &quot;Проблемы передачи информации&quot; основан в&nbsp;1965&nbsp;году и выходит 4&nbsp;раза в&nbsp;год. Журнал публикует оригинальные математические статьи теоретического характера и
+заказные обзорные статьи по следующим основным направлениям: теория информации,
+теория кодирования, методы обработки сигналов, теория автоматов, большие системы, моделирование каналов связи, теория сетей связи, кодирование источников, защита
+информации.</p>	<table border=0 class=Card cellspacing=0 cellpadding=2>
+		<tr>
+	<td valign=top valign=top align=right class=red>Адрес:</td>
+	<td valign=top valign=top align=left>127051, г.&nbsp;Москва, Большой Каретный пер., д. 19, стр. 1</textarea>
+	</td>
+	</tr>
+		<tr>
+	<td valign=top align=right class=red>Website:</td>
+	<td valign=top colspan=1><a title="" class=SLink target=_blank href='https://www.mathnet.ru/ppi'>https://www.mathnet.ru/ppi</a></td>
+	</tr>
+		<tr>
+		<td valign=top align=right class=red>ISSN:</td>
+		<td>
+		<a class=SLink target=_blank title='ISSN: 0555-2923' href="https://portal.issn.org/resource/issn/0555-2923">0555-2923&nbsp;(print)</a>	</td>
+		</tr>
+			<tr>
+	<td valign=top align=right class=red>Учредители:</td>
+	<td valign=top align=left>Российская академия наук, Институт проблем передачи информации им.&nbsp;А.&nbsp;А.&nbsp;Харкевича&nbsp;РАН</td>
+	</tr>
+		<td valign=top align=right class=red>Издатели:</td>
+	<td valign=top align=left>Российская академия наук</td>
+	</tr>
+		<tr>
+	<td valign=top align=right class=red>Копирайт:</td>
+	<td valign=top align=left>Российская академия наук, Редколлегия журнала (составитель)</td>
+	</tr>
+		
+        <tr>
+	<td valign=top align=right class=red>Рег.&nbsp;в&nbsp;Роскомнадзоре:</td>
+	<td valign=top align=left><a target=_new class=SLink href="https://rkn.gov.ru/mass-communications/reestr/media/?id=200215">0110179 от 05.02.1993</a></td>
+	</tr>
+		<tr>
+	<td><br></td>
+	</tr>
+		<tr>
+	<td valign=top align=right class=red>MathSciNet:</td>
+	<td valign=top align=left><a target=_new class=SLink href="https://mathscinet.ams.org/mathscinet/serials/profile?journalId=4276">https://mathscinet.ams.org/mathscinet/serials/profile?journalId=4276</a></td>
+	</tr>
+		<tr>
+		<td valign=top align=right class=red>zbMATH:</td>
+		<td valign=top align=left><a target=_new class=SLink href="http://zbmath.org/serials/?q=se:00001623|00000187">http://zbmath.org/serials/?q=se:00001623|00000187</a></td>
+		</tr>
+		
+        <tr>
+	<td valign=top align=right class=red><nobr>Web of Science</nobr>:</td>
+	<td valign=top align=left><a class=SLink href="http://mjl.clarivate.com/cgi-bin/jrnlst/jlresults.cgi?PC=MASTER&ISSN=0032-9460" target=_new>Индексируется в Web of Science Core Collection</a></td>
+	</tr>
+	
+        <tr>
+	<td valign=top align=right class=red><nobr>Clarivate JCR Category</nobr>:</td>
+	<td valign=top align=left><nobr>COMPUTER SCIENCE, THEORY & METHODS: <b>Q3</b> (0.900) (2024)</nobr><BR/><nobr>MATHEMATICS, APPLIED: <b>Q3</b> (0.900) (2024)</nobr></td>
+	</tr>
+	
+        <tr>
+	<td valign=top align=right class=red><nobr>Web of Science</nobr>:</td>
+	<td valign=top align=left>Индексируется в RUSSIAN SCIENCE CITATION INDEX</td>
+	</tr>
+	<tr>
+	<td valign=top align=right class=red>Scopus:</td>
+	<td valign=top align=left><a target=_new class=SLink href="https://www.scopus.com/sourceid/13799">http://www.scopus.com/source/sourceInfo.url?sourceId=13799</a></td>
+	</tr>
+	
+        <tr>
+	<td valign=top align=right class=red><nobr>Scopus CiteScore</nobr>:</td>
+	<td valign=top align=left><a class=SLink target=_blank href="https://www.scopus.com/sourceid/13799"><nobr>Information Systems: <b>Q3</b> (1.300 26% #347/474) (2024)</nobr><BR/><nobr>Computer Networks and Communications: <b>Q3</b> (1.300 26% #375/507) (2024)</nobr><BR/><nobr>Computer Science Applications: <b>Q4</b> (1.300 23% #723/947) (2024)</nobr></a></td>
+	</tr>
+	
+        <tr>
+	<td valign=top align=right class=red><nobr>ScimagoJR</nobr>:</td>
+	<td valign=top align=left><a class=SLink target=_blank href="https://www.scimagojr.com/journalsearch.php?q=13799&tip=sid&clean=0"><nobr>Computer Networks and Communications: <b>Q3</b> (0.277) (2025)</nobr><BR/><nobr>Computer Science Applications: <b>Q3</b> (0.277) (2025)</nobr><BR/><nobr>Information Systems: <b>Q3</b> (0.277) (2025)</nobr></a></td>
+	</tr>
+	
+  	<tr style='cursor: help' title="Белый список утверждается Межведомственной рабочей группой по формированию и актуализации Белого списка научных журналов, созданной Министерством науки и высшего образования Российской Федерации в соответствии с поручением Заместителя Председателя Правительства Российской Федерации (№ ДЧ-П8-60 пр от 27.06.2022).">
+	<td valign=top align=right class=red><nobr>Уровень в&nbsp;Белом&nbsp;списке:</nobr></td>
+	<td valign=top align=left>
+	
+		<b>1</b> (2025)
+  	</td>
+	</tr>
+		<tr>
+	<td valign=top align=right class=red>eLibrary.Ru:</td>
+	<td valign=top align=left><a target=_new class=SLink href="https://elibrary.ru/title_about.asp?id=7960">http://elibrary.ru/title_about.asp?id=7960</a></td>
+	</tr>
+		<tr>
+		<td valign=top align=right class=red><nobr>Англ. версия:</nobr></td>
+		<td valign=center colspan=1><a class=SLink href=https://link.springer.com/journal/11122>Problems of Information Transmission</a>. ISSN: <a class=SLink target=_blank title='ISSN: 0032-9460' href="https://portal.issn.org/resource/issn/0032-9460">0032-9460&nbsp;(print)</a></td>
+		</tr>
+			</table>
+
+	<br><br>
+		<p class=sem>
+			<img src=/images/ar3.gif border=0><b>Главный редактор	</b>
+				<br><a class=SLink href=/rus/person8652>Соболевский Андрей Николаевич</a>
+			<br><br>
+				<p class=sem>
+			<img src=/images/ar3.gif border=0><b>Редакционная коллегия	</b>
+				<br><a class=SLink href=/rus/person19269>Кузнецов Николай Александрович</a>, зам. главного редактора
+			<br><a class=SLink href=/rus/person8877>Ногин Дмитрий Юрьевич</a>, ответственный секретарь
+			<br><a class=SLink href=/rus/person34557>Барг Александр Михайлович</a>
+			<br><a class=SLink href=/rus/person11180>Бассалыго Леонид Александрович</a>
+			<br><a class=SLink href=/rus/person17301>Зиновьев Виктор Александрович</a>
+			<br><a class=SLink href=/rus/person34558>Зяблов Виктор Васильевич</a>
+			<br><a class=SLink href=/rus/person11316>Ибрагимов Ильдар Абдуллович</a>
+			<br><span style='border: 2px solid black; padding: 1px;'><a class=SLink href=/rus/person8941>Малышев Вадим Александрович</a></span>
+			<br><a class=SLink href=/rus/person8555>Тихомиров Владимир Михайлович</a>
+			<br><a class=SLink href=/rus/person20913>Тюрин Юрий Николаевич</a>
+			<br><a class=SLink href=/rus/person34560>Цыбаков Борис Соломонович</a>
+			<br><br>
+				<p class=sem>
+			<img src=/images/ar3.gif border=0><b>Заведующая редакцией	</b>
+				<br>Золотайкина Светлана Васильевна
+			</td>
+	 <td class=rightcol valign=top align=center>
+	  	<img  name=logo_0 vspace=10 hspace=20 alt="Проблемы передачи информации" src='/JrnLogos/ppi/ppi1.jpg' border=0 width='145px'>
+					<img  name=logo_0 vspace=10 hspace=20 alt="Problems of Information Transmission" src='/JrnLogos/ppi/ppi_e.jpg' border=0 width='145px'>
+				
+			<br>
+			<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+			<tr class=StatJRow>
+			<td class=showUDC title="Период&nbsp;индексации" align=right>Период&nbsp;индексации:</td>
+			<td class=showUDC title="Период&nbsp;индексации">1965&ndash;2025</td>
+			</tr>
+			
+			</table>
+			
+			<br>
+			<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+			
+			<tr class=StatJRow>
+			<td class=showUDC title="Количество публикаций" align=right>Публикаций:</td>
+			<td class=showUDC title="Количество публикаций">2437</td>
+			</tr>
+			<tr class=StatJRow>
+			<td class=showUDC title="Количество научных статей" align=right>Научных&nbsp;статей:</td>
+			<td class=showUDC title="Количество научных статей">2339</td>
+			</tr>
+			<tr class=StatJRow>
+			<td class=showUDC title="Количество авторов статей" align=right>Авторов:</td>
+			<td class=showUDC title="Количество авторов статей">1387</td>
+			</tr>
+			<tr class=StatJRow>
+			<td class=showUDC title="Количество ссылок на научные статьи журнала" align=right>Ссылок&nbsp;на&nbsp;журнал:</td>
+			<td class=showUDC title="Количество ссылок на научные статьи журнала">8741</td>
+			</tr>
+			<tr class=StatJRow>
+			<td class=showUDC title="Количество научных статей, на которые есть хотя бы одна ссылка" align=right>Цитированных&nbsp;статей:</td>
+			<td class=showUDC title="Количество научных статей, на которые есть хотя бы одна ссылка">1168</td>
+			</tr>
+			</table>
+				
+			<br>	
+	
+			<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+			<tr class=StatJRow>
+			<td style='width: 3' align=left valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+			<td align=left valign=top colspan=1><b><nobr>Импакт-фактор Math-Net.Ru</nobr></b></td>
+			</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2019--2020 из научных статей всех журналов за 2021, деленное на число научных статей журнала за 2019--2020 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2021>за 2021 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2021>1.574</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2018--2019 из научных статей всех журналов за 2020, деленное на число научных статей журнала за 2018--2019 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2020>за 2020 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2020>1.367</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2017--2018 из научных статей всех журналов за 2019, деленное на число научных статей журнала за 2017--2018 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2019>за 2019 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2019>0.881</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2016--2017 из научных статей всех журналов за 2018, деленное на число научных статей журнала за 2016--2017 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2018>за 2018 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2018>0.613</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2015--2016 из научных статей всех журналов за 2017, деленное на число научных статей журнала за 2015--2016 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2017>за 2017 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2017>0.615</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2014--2015 из научных статей всех журналов за 2016, деленное на число научных статей журнала за 2014--2015 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2016>за 2016 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2016>0.645</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2013--2014 из научных статей всех журналов за 2015, деленное на число научных статей журнала за 2013--2014 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2015>за 2015 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2015>0.912</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2012--2013 из научных статей всех журналов за 2014, деленное на число научных статей журнала за 2012--2013 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2014>за 2014 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2014>1.129</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2011--2012 из научных статей всех журналов за 2013, деленное на число научных статей журнала за 2011--2012 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2013>за 2013 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2013>0.694</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2010--2011 из научных статей всех журналов за 2012, деленное на число научных статей журнала за 2010--2011 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2012>за 2012 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2012>0.526</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2009--2010 из научных статей всех журналов за 2011, деленное на число научных статей журнала за 2009--2010 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2011>за 2011 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2011>0.734</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2008--2009 из научных статей всех журналов за 2010, деленное на число научных статей журнала за 2008--2009 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2010>за 2010 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2010>0.791</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2007--2008 из научных статей всех журналов за 2009, деленное на число научных статей журнала за 2007--2008 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2009>за 2009 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2009>0.613</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2006--2007 из научных статей всех журналов за 2008, деленное на число научных статей журнала за 2006--2007 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2008>за 2008 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2008>0.554</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2005--2006 из научных статей всех журналов за 2007, деленное на число научных статей журнала за 2005--2006 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2007>за 2007 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2007>0.727</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2004--2005 из научных статей всех журналов за 2006, деленное на число научных статей журнала за 2004--2005 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2006>за 2006 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2006>0.554</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2003--2004 из научных статей всех журналов за 2005, деленное на число научных статей журнала за 2003--2004 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2005>за 2005 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2005>0.385</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2002--2003 из научных статей всех журналов за 2004, деленное на число научных статей журнала за 2002--2003 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2004>за 2004 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2004>0.500</a></td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Количество ссылок на научные статьи журнала за 2001--2002 из научных статей всех журналов за 2003, деленное на число научных статей журнала за 2001--2002 гг." align=center>
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2003>за 2003 год</a>:
+				<a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=IF_details&option_lang=rus&year=2003>0.338</a></td>
+				</tr>
+			
+			</table>
+				
+			<br>	
+	
+			<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+			<tr class=StatJRow>
+			<td style='width: 3' align=left valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+			<td align=left valign=top colspan=1><b><nobr>Импакт-фактор Web of Science</nobr></b></td>
+			</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2024 год" align=center>
+				за 2024 год:
+				0.900</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2023 год" align=center>
+				за 2023 год:
+				0.500</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2022 год" align=center>
+				за 2022 год:
+				1.200</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2021 год" align=center>
+				за 2021 год:
+				1.340</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2020 год" align=center>
+				за 2020 год:
+				1.082</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2019 год" align=center>
+				за 2019 год:
+				0.593</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2018 год" align=center>
+				за 2018 год:
+				0.557</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2017 год" align=center>
+				за 2017 год:
+				0.359</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2016 год" align=center>
+				за 2016 год:
+				0.581</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2015 год" align=center>
+				за 2015 год:
+				0.632</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2014 год" align=center>
+				за 2014 год:
+				0.597</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2013 год" align=center>
+				за 2013 год:
+				0.371</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2012 год" align=center>
+				за 2012 год:
+				0.298</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2011 год" align=center>
+				за 2011 год:
+				0.484</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2010 год" align=center>
+				за 2010 год:
+				0.418</td>
+				</tr>
+			
+				<tr class=StatJRow>
+				<td></td>
+				<td class=showUDC title="Импакт-фактор Web of Science, 2009 год" align=center>
+				за 2009 год:
+				0.393</td>
+				</tr>
+			
+			</table>
+				
+			<br>	
+	
+			<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+			<tr class=StatJRow>
+			<td style='width: 3' align=left valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+			<td align=left valign=top colspan=3><b><nobr>Индексы Scopus</nobr></b></td>
+			</tr>
+			
+					<tr class=StatJRow title="Scopus 2025 SJR">
+					<td></td>
+					<td class=showUDC align=right>2025</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.277</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2024 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2024</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					1.300</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2024 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2024</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.425</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2024 SJR">
+					<td></td>
+					<td class=showUDC align=right>2024</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.378</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2023 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2023</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					2.000</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2023 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2023</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.633</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2023 SJR">
+					<td></td>
+					<td class=showUDC align=right>2023</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.451</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2022 SJR">
+					<td></td>
+					<td class=showUDC align=right>2022</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.588</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2021 SJR">
+					<td></td>
+					<td class=showUDC align=right>2021</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.661</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2020 SJR">
+					<td></td>
+					<td class=showUDC align=right>2020</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.525</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2019 SJR">
+					<td></td>
+					<td class=showUDC align=right>2019</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.506</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2018 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2018</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					0.440</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2018 SJR">
+					<td></td>
+					<td class=showUDC align=right>2018</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.282</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2017 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2017</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					0.460</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2017 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2017</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.980</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2017 SJR">
+					<td></td>
+					<td class=showUDC align=right>2017</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.353</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2016 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2016</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					0.680</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2016 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2016</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.906</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2016 SJR">
+					<td></td>
+					<td class=showUDC align=right>2016</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.460</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2015 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2015</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					0.680</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2015 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2015</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.853</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2015 IPP">
+					<td></td>
+					<td class=showUDC align=right>2015</td>
+					<td class=showUDC align=center>IPP</td>
+					<td class=showUDC align=left>
+					0.488</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2015 SJR">
+					<td></td>
+					<td class=showUDC align=right>2015</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.403</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2014 CiteScore">
+					<td></td>
+					<td class=showUDC align=right>2014</td>
+					<td class=showUDC align=center>CiteScore</td>
+					<td class=showUDC align=left>
+					0.510</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2014 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2014</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.628</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2014 IPP">
+					<td></td>
+					<td class=showUDC align=right>2014</td>
+					<td class=showUDC align=center>IPP</td>
+					<td class=showUDC align=left>
+					0.446</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2014 SJR">
+					<td></td>
+					<td class=showUDC align=right>2014</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.287</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2013 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2013</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					1.536</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2013 IPP">
+					<td></td>
+					<td class=showUDC align=right>2013</td>
+					<td class=showUDC align=center>IPP</td>
+					<td class=showUDC align=left>
+					0.625</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2013 SJR">
+					<td></td>
+					<td class=showUDC align=right>2013</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.697</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2012 SNIP">
+					<td></td>
+					<td class=showUDC align=right>2012</td>
+					<td class=showUDC align=center>SNIP</td>
+					<td class=showUDC align=left>
+					0.800</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2012 IPP">
+					<td></td>
+					<td class=showUDC align=right>2012</td>
+					<td class=showUDC align=center>IPP</td>
+					<td class=showUDC align=left>
+					0.337</td>
+					</tr>
+					
+					<tr class=StatJRow title="Scopus 2012 SJR">
+					<td></td>
+					<td class=showUDC align=right>2012</td>
+					<td class=showUDC align=center>SJR</td>
+					<td class=showUDC align=left>
+					0.521</td>
+					</tr>
+					
+			</table>
+			
+		<br>
+
+		<table border=0 class=StatJTable cellspacing=1 cellpadding=1 align=center>
+		<tr class=StatJRow>
+		<td align=right valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+		<td colspan=1 align=left><a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=statlist&option_lang=rus#r8>Часто&nbsp;публикуемые авторы</a></td>
+		</tr>
+				
+		<tr class=StatJRow>
+		<td align=right valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+		<td colspan=1 align=left><a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=statlist&option_lang=rus#r9>Часто&nbsp;цитируемые авторы</a></td>
+		</tr>
+				
+		<tr class=StatJRow>
+		<td align=right valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+		<td colspan=1 align=left><a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=statlist&option_lang=rus#r7>Часто&nbsp;цитируемые статьи</a></td>
+		</tr>
+			
+		 	<tr class=StatJRow>
+			<td align=right valign=top><img vspace=4 src=/gifs/ar3.gif border=0></td>
+			<td colspan=1 align=left><a class=SLink href=/php/journal.phtml?jrnid=ppi&wshow=statlist&option_lang=rus#r6>Популярные статьи</a></td>
+			</tr>
+				
+		</table>	
+		  </td>
+	   	</tr>
+	</table>
+		<table border=0 width=100% cellspacing=0 cellpadding=0>
+	<tr class=man1>
+	<td width=70%>&nbsp;</td>
+	<td width=30% valign=bottom><img src=/images/man1.jpg align=left>
+	</td>
+	</tr>
+	</table>
+		<DIV class=mian>
+	<TABLE width=100% class=mian cellSpacing=0 cellPadding=10 border=0 align="center">
+	<TR>
+
+	<td width=20% align=left>
+	<img src=/gifs/ar4.gif border=0>&nbsp;
+	Обратная связь:<br>
+	<script language="JavaScript">document.write(decode_email('DMEBCAHEGJHEGMGFDNCHEFCNGNGBGJGMDKCAGNGBHEGICNGOGFHEDCDADCDGFPDADFEAGNGJCNHCGBHDCOHCHFCHCAGDGMGBHDHDDNFDEMGJGOGLCAEIFCEFEGDNCCGNGBGJGMHEGPDKGNGBHEGICNGOGFHEDCDADCDGFPDADFEAGNGJCNHCGBHDCOHCHFCCDOGNGBHEGICNGOGFHEDCDADCDGFPDADFEAGNGJCNHCGBHDCOHCHFDMCPEBDO'));</script><noscript>email</noscript>
+	</td>
+
+	<td valign=center width=30%  align=center>
+	<img src=/gifs/ar4.gif border=0>&nbsp;<a class=SLink href=/php/agreement.phtml?option_lang=rus>Пользовательское соглашение</a>
+	</td>
+
+	<td valign=center width=20%  align=center>
+	<img src=/gifs/ar4.gif border=0>&nbsp;<a class=SLink href=/php/registration.phtml?option_lang=rus>Регистрация посетителей портала</a></td>
+
+	<td valign=center width=20%  align=center>
+	<img src=/gifs/ar4.gif border=0>&nbsp;<a class=SLink href=/supplement/logo_mathnet.zip>Логотипы</a></td>
+
+
+
+	<td align=left width=28%>
+	<nobr>&copy; <A class=SLink title="Математический институт им. В. А. Стеклова РАН" href="http://www.mi-ras.ru" target=_blank>
+	Математический институт им. В. А. Стеклова РАН</A>,&nbsp;2026</nobr>
+	<!--
+	<br>
+	<nobr>&copy; <A class=SLink title="Российская академия наук, Отделение математических наук" href="http://omn.ras.ru" target=_blank>
+	Российская академия наук, Отделение математических наук</A>,&nbsp;2026</nobr>
+	-->
+	</td>
+	</tr>
+	</TABLE>
+	</DIV>
+	<br><br>
+
+	
+		<script src="https://www.google-analytics.com/urchin.js" type="text/javascript">
+		</script>
+		<script type="text/javascript">
+		_uacct = "UA-3038033-1";
+		urchinTracker();
+		</script>
+		
+</body>
+
+</html>
