@@ -12,27 +12,33 @@ import pandas as pd
 
 
 SCENARIO_LABELS = {
-    "phase_burst_recovery": "Burst -> Recovery",
-    "phase_ddos_recovery": "DDoS -> Recovery",
-    "phase_universal_mix": "Universal Mixed Load",
+    "phase_burst_recovery": "Всплеск -> восстановление",
+    "phase_ddos_recovery": "DDoS -> восстановление",
+    "phase_universal_mix": "Смешанная нагрузка",
 }
 MODE_LABELS = {
-    "static_token": "Static Token",
-    "adaptive": "Adaptive",
-    "static_sliding": "Static Sliding",
+    "static_token": "Статический Token Bucket",
+    "adaptive": "Адаптивный режим",
+    "static_sliding": "Статический Sliding Window",
 }
 MODE_ORDER = ["static_token", "adaptive", "static_sliding"]
 PHASE_ORDER = ["normal", "attack", "recovery"]
 PHASE_LABELS = {
-    "normal": "Normal",
-    "attack": "Attack",
-    "recovery": "Recovery",
-    "steady": "Steady",
-    "poisson": "Poisson",
-    "burst": "Burst",
+    "normal": "Норма",
+    "attack": "Атака",
+    "recovery": "Восстановление",
+    "steady": "Стабильная",
+    "poisson": "Пуассоновская",
+    "burst": "Всплеск",
     "ddos": "DDoS",
 }
 ALGO_VALUES = {"token": 1, "sliding": 2, "fixed": 0, "unknown": -1}
+ALGO_LABELS = {
+    "token": "Token Bucket",
+    "sliding": "Sliding Window",
+    "fixed": "Fixed Window",
+    "unknown": "Неизвестно",
+}
 PHASE_COLORS = {
     "normal": "#d9edf7",
     "steady": "#d9edf7",
@@ -75,7 +81,7 @@ def build_phase_reject_plot(summary: pd.DataFrame, output_dir: Path) -> Path:
     summary = summary.sort_values(["scenario", "phase_order", "mode"])
     scenarios = scenario_order(summary)
 
-    fig, axes = plt.subplots(1, len(scenarios), figsize=(6.5 * len(scenarios), 5), sharey=True)
+    fig, axes = plt.subplots(1, len(scenarios), figsize=(max(10, 6.5 * len(scenarios)), 5), sharey=True)
     if len(scenarios) == 1:
         axes = [axes]
     bar_width = 0.22
@@ -110,9 +116,9 @@ def build_phase_reject_plot(summary: pd.DataFrame, output_dir: Path) -> Path:
         axis.grid(axis="y", linestyle="--", alpha=0.4)
         axis.set_ylim(0, 100)
 
-    axes[0].set_ylabel("Reject, %")
-    axes[-1].legend(loc="upper right")
-    fig.suptitle("Figure 3.2d. Phased comparison: reject by mode and phase", y=1.02)
+    axes[0].set_ylabel("Отклонено, %")
+    axes[-1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
+    fig.suptitle("Фазовое сравнение доли отклонений по режимам", y=1.02)
     fig.tight_layout()
     out = output_dir / "fig_3_2d_phase_reject.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")
@@ -154,18 +160,20 @@ def build_timeline_plot(timeline: pd.DataFrame, output_dir: Path) -> Path:
             phase_spans.append((current_phase, start_second, last_second + 1))
         for phase_name, start, end in phase_spans:
             axis.axvspan(start, end, color=PHASE_COLORS.get(phase_name, "#eeeeee"), alpha=0.35)
-        axis.set_title(f"{SCENARIO_LABELS.get(scenario, scenario)} (adaptive, repeat {int(repeat)})")
+        axis.set_title(f"{SCENARIO_LABELS.get(scenario, scenario)} (адаптивный режим, повтор {int(repeat)})")
         y_ticks = sorted({value for value in run["algorithm_value"].tolist() if value >= 0})
         if not y_ticks:
             y_ticks = [1, 2]
         axis.set_yticks(y_ticks)
         reverse_algo_values = {value: name for name, value in ALGO_VALUES.items()}
-        axis.set_yticklabels([reverse_algo_values.get(value, str(value)) for value in y_ticks])
+        axis.set_yticklabels(
+            [ALGO_LABELS.get(reverse_algo_values.get(value, ""), str(value)) for value in y_ticks]
+        )
         axis.set_ylim(min(y_ticks) - 0.5, max(y_ticks) + 0.5)
         axis.grid(axis="x", linestyle="--", alpha=0.4)
-        axis.set_xlabel("Elapsed time, s")
+        axis.set_xlabel("Время от начала эксперимента, с")
 
-    fig.suptitle("Figure 3.2e. Adaptive algorithm timeline across phases", y=1.02)
+    fig.suptitle("Переключения алгоритма адаптивного контура по фазам", y=1.02)
     fig.tight_layout()
     out = output_dir / "fig_3_2e_adaptive_timeline.png"
     fig.savefig(out, dpi=180, bbox_inches="tight")

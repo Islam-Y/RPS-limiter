@@ -13,6 +13,11 @@ import pandas as pd
 
 
 ALGO_ORDER = ["fixed", "token", "sliding"]
+ALGO_LABELS = {
+    "fixed": "Fixed Window",
+    "token": "Token Bucket",
+    "sliding": "Sliding Window",
+}
 SCENARIO_ORDER = [
     "constant_low",
     "sinusoidal",
@@ -21,6 +26,14 @@ SCENARIO_ORDER = [
     "burst",
     "ddos",
 ]
+SCENARIO_LABELS = {
+    "constant_low": "низкая\nпостоянная",
+    "sinusoidal": "синусоидальная",
+    "poisson": "пуассоновская",
+    "constant_high": "высокая\nпостоянная",
+    "burst": "всплеск",
+    "ddos": "DDoS",
+}
 
 
 def ordered(series: pd.Series, order: list[str]) -> pd.Series:
@@ -42,8 +55,11 @@ def annotate_bars(ax: plt.Axes, bars, fmt: str = "{:.2f}") -> None:
 
 def build_speed_plot(raw: pd.DataFrame, output_dir: Path) -> Path:
     lat_all = raw.groupby("algorithm", as_index=False)["avg_proxy_latency_ms"].mean()
-    lat_ddos = raw.loc[raw["scenario"] == "ddos", ["algorithm", "avg_proxy_latency_ms"]].rename(
-        columns={"avg_proxy_latency_ms": "ddos_latency_ms"}
+    lat_ddos = (
+        raw.loc[raw["scenario"] == "ddos", ["algorithm", "avg_proxy_latency_ms"]]
+        .groupby("algorithm", as_index=False)["avg_proxy_latency_ms"]
+        .mean()
+        .rename(columns={"avg_proxy_latency_ms": "ddos_latency_ms"})
     )
     df = lat_all.merge(lat_ddos, on="algorithm", how="left")
     df["algorithm"] = ordered(df["algorithm"], ALGO_ORDER)
@@ -53,16 +69,21 @@ def build_speed_plot(raw: pd.DataFrame, output_dir: Path) -> Path:
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    bars_all = ax.bar(x - width / 2, df["avg_proxy_latency_ms"], width, label="Avg latency (all scenarios)")
-    bars_ddos = ax.bar(x + width / 2, df["ddos_latency_ms"], width, label="Latency in DDoS")
+    bars_all = ax.bar(
+        x - width / 2,
+        df["avg_proxy_latency_ms"],
+        width,
+        label="Средняя задержка по всем сценариям",
+    )
+    bars_ddos = ax.bar(x + width / 2, df["ddos_latency_ms"], width, label="Задержка в DDoS")
 
     annotate_bars(ax, bars_all, "{:.3f}")
     annotate_bars(ax, bars_ddos, "{:.3f}")
 
-    ax.set_title("Figure 3.2a. Speed: proxy latency by algorithm")
-    ax.set_ylabel("Latency, ms")
+    ax.set_title("Задержка прокси по алгоритмам")
+    ax.set_ylabel("Задержка, мс")
     ax.set_xticks(x)
-    ax.set_xticklabels(df["algorithm"])
+    ax.set_xticklabels([ALGO_LABELS.get(str(value), str(value)) for value in df["algorithm"]])
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.legend()
 
@@ -80,8 +101,11 @@ def build_reliability_plot(raw: pd.DataFrame, output_dir: Path) -> Path:
         .agg(forwarded=("forwarded", "sum"), total=("total_requests", "sum"))
         .assign(success_normal_percent=lambda d: 100.0 * d["forwarded"] / d["total"])
     )
-    ddos = raw.loc[raw["scenario"] == "ddos", ["algorithm", "reject_percent"]].rename(
-        columns={"reject_percent": "reject_ddos_percent"}
+    ddos = (
+        raw.loc[raw["scenario"] == "ddos", ["algorithm", "reject_percent"]]
+        .groupby("algorithm", as_index=False)["reject_percent"]
+        .mean()
+        .rename(columns={"reject_percent": "reject_ddos_percent"})
     )
     df = agg.merge(ddos, on="algorithm", how="left")
     df["algorithm"] = ordered(df["algorithm"], ALGO_ORDER)
@@ -95,22 +119,22 @@ def build_reliability_plot(raw: pd.DataFrame, output_dir: Path) -> Path:
         x - width / 2,
         df["success_normal_percent"],
         width,
-        label="Success in normal traffic",
+        label="Успешность штатного трафика",
     )
     bars_ddos = ax.bar(
         x + width / 2,
         df["reject_ddos_percent"],
         width,
-        label="Reject in DDoS",
+        label="Отклонения при DDoS",
     )
 
     annotate_bars(ax, bars_success)
     annotate_bars(ax, bars_ddos)
 
-    ax.set_title("Figure 3.2b. Reliability split: normal success vs DDoS filtering")
-    ax.set_ylabel("Percent, %")
+    ax.set_title("Доступность штатного трафика и фильтрация DDoS")
+    ax.set_ylabel("Доля, %")
     ax.set_xticks(x)
-    ax.set_xticklabels(df["algorithm"])
+    ax.set_xticklabels([ALGO_LABELS.get(str(value), str(value)) for value in df["algorithm"]])
     ax.set_ylim(0, 100)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.legend()
@@ -134,13 +158,13 @@ def build_heatmap_plot(raw: pd.DataFrame, output_dir: Path) -> Path:
     fig, ax = plt.subplots(figsize=(9, 5))
     im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto", vmin=0, vmax=100)
     cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("Reject, %")
+    cbar.set_label("Отклонено, %")
 
-    ax.set_title("Figure 3.2c. Reject rate by scenario and algorithm")
+    ax.set_title("Доля отклонений по сценариям и алгоритмам")
     ax.set_xticks(np.arange(len(pivot.columns)))
-    ax.set_xticklabels(pivot.columns)
+    ax.set_xticklabels([ALGO_LABELS.get(str(value), str(value)) for value in pivot.columns])
     ax.set_yticks(np.arange(len(pivot.index)))
-    ax.set_yticklabels(pivot.index)
+    ax.set_yticklabels([SCENARIO_LABELS.get(str(value), str(value)) for value in pivot.index])
 
     for i in range(len(pivot.index)):
         for j in range(len(pivot.columns)):
@@ -173,7 +197,9 @@ def build_adaptive_plot(adaptive: pd.DataFrame, output_dir: Path) -> Path:
     adaptive["scenario"] = ordered(adaptive["scenario"], ["constant_high", "ddos"])
     adaptive["algorithm"] = ordered(adaptive["algorithm"], ALGO_ORDER)
     adaptive = adaptive.sort_values(["scenario", "algorithm"])
-    adaptive["label"] = adaptive["scenario"].astype(str) + "\n" + adaptive["algorithm"].astype(str)
+    scenario_labels = adaptive["scenario"].astype(str).map(SCENARIO_LABELS).fillna(adaptive["scenario"].astype(str))
+    algorithm_labels = adaptive["algorithm"].astype(str).map(ALGO_LABELS).fillna(adaptive["algorithm"].astype(str))
+    adaptive["label"] = scenario_labels.astype(str) + "\n" + algorithm_labels.astype(str)
 
     colors = ["#2ca02c" if v < 0 else "#d62728" for v in adaptive[delta_col]]
 
@@ -183,8 +209,8 @@ def build_adaptive_plot(adaptive: pd.DataFrame, output_dir: Path) -> Path:
     annotate_bars(ax, bars)
 
     ax.axhline(0, color="black", linewidth=1)
-    ax.set_title("Figure 3.2d. Adaptive mode effect on reject (delta, p.p.)")
-    ax.set_ylabel("Delta reject, p.p. (adaptive - static)")
+    ax.set_title("Эффект адаптивного режима на долю отклонений")
+    ax.set_ylabel("Изменение доли отклонений, п.п.\n(адаптивный - статический)")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
 
     fig.tight_layout()
