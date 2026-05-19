@@ -1,0 +1,76 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+*.iml
+*.iws
+*.ipr
+*.swp
+*.swo
+*~
+
+# Java / Gradle / JVM build output
+.gradle/
+**/.gradle/
+build/
+**/build/
+bin/
+**/bin/
+out/
+**/out/
+target/
+**/target/
+*.class
+
+# Python caches, environments, and package output
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.venv/
+**/.venv/
+venv/
+env/
+ENV/
+dist/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+local.properties
+
+# Logs and runtime state
+logs/
+log/
+*.log
+*.log.*
+*.pid
+*.seed
+
+# Repository-local generated scratch artifacts
+/tmp/
+/.tmp*/
+/.cache_vkr_images/
+*.qlpreview/
+
+# Local assistant / automation working state
+/.codex/
+/.agents/
+/AGENTS.md
+/memory.md
+/notes/
