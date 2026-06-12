@@ -84,6 +84,21 @@ def add_table(doc, rows):
     return table
 
 
+def add_image(doc, image_name):
+    image_path = BASE / image_name
+    if not image_path.exists():
+        raise FileNotFoundError(f'Image not found: {image_path}')
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.first_line_indent = Cm(0)
+    pf.space_before = Pt(6)
+    pf.space_after = Pt(12)
+    run = p.add_run()
+    run.add_picture(str(image_path), width=Cm(16.0))
+    return p
+
+
 def title_paragraph(doc, text='', *, bold=False, size=14, align=WD_ALIGN_PARAGRAPH.CENTER,
                     space_before=0, space_after=0, line_spacing=1.15, left_indent=None):
     p = doc.add_paragraph()
@@ -179,6 +194,15 @@ for page_idx, page in enumerate(pages[1:], start=1):
         if not line:
             i += 1
             continue
+        if line == '[PAGEBREAK]':
+            doc.add_page_break()
+            i += 1
+            continue
+        image_match = re.match(r'^\[IMAGE:\s*(.+?)\s*\]$', line)
+        if image_match:
+            add_image(doc, image_match.group(1))
+            i += 1
+            continue
         if page_idx == 1 and line != 'СОДЕРЖАНИЕ':
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -206,9 +230,11 @@ for page_idx, page in enumerate(pages[1:], start=1):
             continue
         if line in {'СОДЕРЖАНИЕ', 'ВВЕДЕНИЕ', 'ПЕРЕЧЕНЬ СОКРАЩЕНИЙ И ОБОЗНАЧЕНИЙ', 'ЗАКЛЮЧЕНИЕ', 'ПРИМЕЧАНИЯ И ПРИЛОЖЕНИЯ'}:
             add_heading(doc, line, 0)
-        elif re.match(r'^[1-4]\. (Характеристика|Написание|Проверка|Предзащита)', line):
+        elif line.startswith('Приложение '):
             add_heading(doc, line, 1)
-        elif re.match(r'^2\.[1-4]\. ', line):
+        elif re.match(r'^[1-6]\. ', line):
+            add_heading(doc, line, 1)
+        elif re.match(r'^[1-6]\.[1-9]\. ', line):
             add_heading(doc, line, 2)
         elif line.startswith('Таблица '):
             p = doc.add_paragraph()
@@ -221,10 +247,7 @@ for page_idx, page in enumerate(pages[1:], start=1):
             run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
             run.font.size = Pt(12)
         else:
-            p = add_paragraph(doc, line)
-            if line.startswith('[ДОПОЛНИТЬ'):
-                for run in p.runs:
-                    run.bold = True
+            add_paragraph(doc, line)
         i += 1
 
 # Footer page numbers
